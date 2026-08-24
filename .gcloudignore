@@ -1,0 +1,18 @@
+# Exclude from gcloud builds submit (same as .dockerignore)
+.git
+.gitignore
+node_modules
+dist
+.env*
+*.md
+.DS_Store
+*.log
+coverage
+.vscode
+.idea
+massa
+__pycache__
+*.pyc
+*.csv
+# Incluir CSVs da pasta public (necessários para a app)
+!public/*.csv

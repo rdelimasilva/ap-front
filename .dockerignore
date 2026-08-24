@@ -1,0 +1,16 @@
+node_modules
+dist
+.git
+.gitignore
+.env*
+*.md
+.DS_Store
+*.log
+coverage
+.vscode
+.idea
+massa
+__pycache__
+*.pyc
+# Excluir CSV da pasta massa, mas manter os de public/ (usados pela app)
+massa/*.csv

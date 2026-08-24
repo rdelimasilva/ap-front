@@ -1,0 +1,551 @@
+import React, { useState, useMemo } from 'react';
+import { Wallet, Calendar, DollarSign, TrendingUp, Clock, Download, X, Building2, FileText, BarChart3, Upload, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { BankStatementReconciliation, ReconciliationData } from './BankStatementReconciliation';
+
+interface SettlementUR {
+  id: string;
+  acquirer: string;
+  brand: string;
+  amount: number;
+  settlementDate: string;
+}
+
+interface ExpectedSettlement {
+  id: string;
+  contractId: string;
+  client: string;
+  expectedDate: string;
+  expectedAmount: number;
+  urs: SettlementUR[];
+  status: 'pending' | 'scheduled';
+}
+
+interface RealizedSettlement {
+  id: string;
+  contractId: string;
+  client: string;
+  realizedDate: string;
+  realizedAmount: number;
+  expectedAmount: number;
+  urs: SettlementUR[];
+  status: 'completed' | 'partial' | 'failed';
+}
+
+interface BankReconciliation {
+  settlementId: string;
+  contractId: string;
+  client: string;
+  expectedAmount: number;
+  realizedAmount: number;
+  bankAmount: number;
+  status: 'matched' | 'divergent' | 'missing';
+  difference: number;
+}
+
+export const SettlementControlModule: React.FC = () => {
+  const [selectedStatus, setSelectedStatus] = useState<'all' | 'pending' | 'completed' | 'failed'>('all');
+  const [selectedSettlement, setSelectedSettlement] = useState<SettlementDetail | null>(null);
+  const [showReconciliationModal, setShowReconciliationModal] = useState(false);
+  const [lastReconciliation, setLastReconciliation] = useState<ReconciliationData | null>(null);
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(value);
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }).format(date);
+  };
+
+  const settlements: SettlementDetail[] = [
+    {
+      id: 1,
+      contractId: 'CTR-2025-001',
+      date: '2025-11-03',
+      client: 'Tech Solutions Ltda',
+      settlementAmount: 44550,
+      status: 'completed',
+      type: 'Garantia',
+      receivables: [
+        { id: 'UR001', acquirer: 'Stone', brand: 'Visa', originalValue: 15000, settledValue: 14850, settlementDate: '2025-11-03' },
+        { id: 'UR002', acquirer: 'Stone', brand: 'Mastercard', originalValue: 20000, settledValue: 19800, settlementDate: '2025-11-03' },
+        { id: 'UR003', acquirer: 'Cielo', brand: 'Visa', originalValue: 10000, settledValue: 9900, settlementDate: '2025-11-03' }
+      ]
+    },
+    {
+      id: 2,
+      contractId: 'CTR-2025-002',
+      date: '2025-11-03',
+      client: 'Comercial Santos',
+      settlementAmount: 31680,
+      status: 'completed',
+      type: 'Antecipação',
+      receivables: [
+        { id: 'UR004', acquirer: 'Rede', brand: 'Mastercard', originalValue: 18000, settledValue: 17820, settlementDate: '2025-11-03' },
+        { id: 'UR005', acquirer: 'Cielo', brand: 'Elo', originalValue: 14000, settledValue: 13860, settlementDate: '2025-11-03' }
+      ]
+    },
+    {
+      id: 3,
+      contractId: 'CTR-2025-003',
+      date: '2025-11-03',
+      client: 'Indústria XYZ',
+      settlementAmount: 77220,
+      status: 'pending',
+      type: 'Garantia',
+      receivables: [
+        { id: 'UR006', acquirer: 'Stone', brand: 'Visa', originalValue: 25000, settledValue: 24750, settlementDate: '2025-11-03' },
+        { id: 'UR007', acquirer: 'Stone', brand: 'Visa', originalValue: 30000, settledValue: 29700, settlementDate: '2025-11-03' },
+        { id: 'UR008', acquirer: 'Cielo', brand: 'Mastercard', originalValue: 23000, settledValue: 22770, settlementDate: '2025-11-03' }
+      ]
+    },
+    {
+      id: 4,
+      contractId: 'CTR-2025-004',
+      date: '2025-11-03',
+      client: 'Varejo Plus',
+      settlementAmount: 20790,
+      status: 'pending',
+      type: 'Liquidação de Dívida',
+      receivables: [
+        { id: 'UR009', acquirer: 'Rede', brand: 'Visa', originalValue: 21000, settledValue: 20790, settlementDate: '2025-11-03' }
+      ]
+    },
+    {
+      id: 5,
+      contractId: 'CTR-2025-005',
+      date: '2025-11-03',
+      client: 'Serviços ABC',
+      settlementAmount: 0,
+      status: 'failed',
+      type: 'Garantia',
+      receivables: [
+        { id: 'UR010', acquirer: 'Cielo', brand: 'Elo', originalValue: 15000, settledValue: 0, settlementDate: '2025-11-03' }
+      ]
+    },
+    {
+      id: 6,
+      contractId: 'CTR-2025-006',
+      date: '2025-11-02',
+      client: 'Distribuidora MN',
+      settlementAmount: 55440,
+      status: 'completed',
+      type: 'Antecipação',
+      receivables: [
+        { id: 'UR011', acquirer: 'Stone', brand: 'Visa', originalValue: 28000, settledValue: 27720, settlementDate: '2025-11-02' },
+        { id: 'UR012', acquirer: 'Rede', brand: 'Mastercard', originalValue: 28000, settledValue: 27720, settlementDate: '2025-11-02' }
+      ]
+    },
+    {
+      id: 7,
+      contractId: 'CTR-2025-007',
+      date: '2025-11-02',
+      client: 'Atacado Brasil',
+      settlementAmount: 91080,
+      status: 'completed',
+      type: 'Garantia',
+      receivables: [
+        { id: 'UR013', acquirer: 'Cielo', brand: 'Visa', originalValue: 40000, settledValue: 39600, settlementDate: '2025-11-02' },
+        { id: 'UR014', acquirer: 'Stone', brand: 'Mastercard', originalValue: 35000, settledValue: 34650, settlementDate: '2025-11-02' },
+        { id: 'UR015', acquirer: 'Rede', brand: 'Elo', originalValue: 17000, settledValue: 16830, settlementDate: '2025-11-02' }
+      ]
+    },
+    {
+      id: 8,
+      contractId: 'CTR-2025-008',
+      date: '2025-11-02',
+      client: 'Logística Express',
+      settlementAmount: 37620,
+      status: 'completed',
+      type: 'Liquidação de Dívida',
+      receivables: [
+        { id: 'UR016', acquirer: 'Stone', brand: 'Visa', originalValue: 22000, settledValue: 21780, settlementDate: '2025-11-02' },
+        { id: 'UR017', acquirer: 'Cielo', brand: 'Mastercard', originalValue: 16000, settledValue: 15840, settlementDate: '2025-11-02' }
+      ]
+    },
+    {
+      id: 9,
+      contractId: 'CTR-2025-009',
+      date: '2025-11-04',
+      client: 'Farmácia Saúde Total',
+      settlementAmount: 62370,
+      status: 'completed',
+      type: 'Garantia',
+      receivables: [
+        { id: 'UR018', acquirer: 'Cielo', brand: 'Visa', originalValue: 35000, settledValue: 34650, settlementDate: '2025-11-04' },
+        { id: 'UR019', acquirer: 'Stone', brand: 'Mastercard', originalValue: 28000, settledValue: 27720, settlementDate: '2025-11-04' }
+      ]
+    },
+    {
+      id: 10,
+      contractId: 'CTR-2025-010',
+      date: '2025-11-04',
+      client: 'Restaurante Bella Vista',
+      settlementAmount: 24255,
+      status: 'completed',
+      type: 'Antecipação',
+      receivables: [
+        { id: 'UR020', acquirer: 'Rede', brand: 'Elo', originalValue: 24500, settledValue: 24255, settlementDate: '2025-11-04' }
+      ]
+    }
+  ];
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <span className="inline-flex px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Concluída</span>;
+      case 'pending':
+        return <span className="inline-flex px-3 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Pendente</span>;
+      case 'failed':
+        return <span className="inline-flex px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Falhou</span>;
+      default:
+        return <span className="inline-flex px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">Desconhecido</span>;
+    }
+  };
+
+  const filteredSettlements = settlements.filter(settlement => {
+    if (selectedStatus !== 'all' && settlement.status !== selectedStatus) {
+      return false;
+    }
+    return true;
+  });
+
+  const totalCompleted = settlements.filter(s => s.status === 'completed').reduce((sum, s) => sum + s.settlementAmount, 0);
+  const totalPending = settlements.filter(s => s.status === 'pending').reduce((sum, s) => sum + s.settlementAmount, 0);
+  const totalFailed = settlements.filter(s => s.status === 'failed').reduce((sum, s) => sum + s.settlementAmount, 0);
+  const totalSettlements = settlements.length;
+
+  const handleReconciliation = (data: ReconciliationData) => {
+    setLastReconciliation(data);
+    console.log('Conciliação realizada:', data);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Controle de Liquidações</h1>
+          <p className="text-gray-600">Acompanhe todas as liquidações em tempo real</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowReconciliationModal(true)}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Conciliar Extrato</span>
+          </button>
+          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2">
+            <Download className="w-4 h-4" />
+            <span>Exportar</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <Wallet className="w-6 h-6 text-blue-600" />
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mb-1">Total de Liquidações</p>
+          <p className="text-2xl font-bold text-gray-900">{totalSettlements}</p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-green-100 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-green-600" />
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mb-1">Concluídas</p>
+          <p className="text-2xl font-bold text-green-600">{formatCurrency(totalCompleted)}</p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-yellow-100 rounded-lg">
+              <Clock className="w-6 h-6 text-yellow-600" />
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mb-1">Pendentes</p>
+          <p className="text-2xl font-bold text-yellow-600">{formatCurrency(totalPending)}</p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-red-100 rounded-lg">
+              <DollarSign className="w-6 h-6 text-red-600" />
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mb-1">Falhadas</p>
+          <p className="text-2xl font-bold text-red-600">{formatCurrency(totalFailed)}</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-semibold text-gray-900">Filtros</h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Data</label>
+            <input
+              type="date"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value as any)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">Todos</option>
+              <option value="completed">Concluída</option>
+              <option value="pending">Pendente</option>
+              <option value="failed">Falhou</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Cliente</label>
+            <input
+              type="text"
+              placeholder="Buscar cliente..."
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">Liquidações</h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Mostrando {filteredSettlements.length} de {settlements.length} liquidações
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID Contrato</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor Liquidação</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Analítico</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredSettlements.map((settlement) => (
+                <tr
+                  key={settlement.id}
+                  className="hover:bg-gray-50 transition-colors"
+                >
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-2">
+                      <FileText className="w-4 h-4 text-gray-400" />
+                      <span className="text-sm font-medium text-gray-900">{settlement.contractId}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-2">
+                      <Calendar className="w-4 h-4 text-gray-400" />
+                      <span className="text-sm text-gray-900">{formatDate(settlement.date)}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-2">
+                      <Building2 className="w-4 h-4 text-gray-400" />
+                      <span className="text-sm text-gray-900">{settlement.client}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                    {formatCurrency(settlement.settlementAmount)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {getStatusBadge(settlement.status)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <button
+                      onClick={() => setSelectedSettlement(settlement)}
+                      className="inline-flex items-center space-x-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                      <span>Ver Analítico</span>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selectedSettlement && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="bg-blue-100 p-2 rounded-lg">
+                  <BarChart3 className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">
+                    Analítico de Liquidação - {selectedSettlement.contractId}
+                  </h2>
+                  <p className="text-sm text-gray-600">{selectedSettlement.client}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedSettlement(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <FileText className="w-5 h-5 text-gray-500" />
+                    <p className="text-sm font-medium text-gray-600">ID Contrato</p>
+                  </div>
+                  <p className="text-lg font-semibold text-gray-900">{selectedSettlement.contractId}</p>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <Calendar className="w-5 h-5 text-gray-500" />
+                    <p className="text-sm font-medium text-gray-600">Data</p>
+                  </div>
+                  <p className="text-lg font-semibold text-gray-900">{formatDate(selectedSettlement.date)}</p>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <DollarSign className="w-5 h-5 text-gray-500" />
+                    <p className="text-sm font-medium text-gray-600">Valor Liquidação</p>
+                  </div>
+                  <p className="text-lg font-semibold text-gray-900">{formatCurrency(selectedSettlement.settlementAmount)}</p>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-blue-900 mb-3">Resumo</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-blue-700">Total de URs</p>
+                    <p className="text-lg font-bold text-blue-900">{selectedSettlement.receivables.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-blue-700">Valor Total Original</p>
+                    <p className="text-lg font-bold text-blue-900">
+                      {formatCurrency(selectedSettlement.receivables.reduce((sum, ur) => sum + ur.originalValue, 0))}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Unidades de Recebíveis (URs) - Bandeira e Credenciadora</h3>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID UR</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credenciadora</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bandeira</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Valor Original</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Valor Liquidado</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {selectedSettlement.receivables.map((ur) => (
+                        <tr key={ur.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{ur.id}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {ur.acquirer}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              {ur.brand}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">{formatCurrency(ur.originalValue)}</td>
+                          <td className="px-4 py-3 text-sm text-right font-semibold text-green-600">{formatCurrency(ur.settledValue)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{formatDate(ur.settlementDate)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => setSelectedSettlement(null)}
+                  className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Fechar
+                </button>
+                <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2">
+                  <Download className="w-4 h-4" />
+                  <span>Exportar Analítico</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <BankStatementReconciliation
+        isOpen={showReconciliationModal}
+        onClose={() => setShowReconciliationModal(false)}
+        onReconcile={handleReconciliation}
+      />
+
+      {lastReconciliation && (
+        <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-xl border border-gray-200 p-4 max-w-md z-40">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+              <Upload className="w-5 h-5 text-green-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-gray-900 mb-1">Conciliação Realizada</p>
+              <p className="text-xs text-gray-600 mb-2">{lastReconciliation.fileName}</p>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-green-50 rounded px-2 py-1">
+                  <span className="text-green-700 font-medium">{lastReconciliation.totalMatched} conciliadas</span>
+                </div>
+                <div className="bg-red-50 rounded px-2 py-1">
+                  <span className="text-red-700 font-medium">{lastReconciliation.totalUnmatched} pendentes</span>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setLastReconciliation(null)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
