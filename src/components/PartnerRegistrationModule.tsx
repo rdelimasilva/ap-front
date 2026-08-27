@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, Plus, Search, Edit2, Trash2, CheckSquare } from 'lucide-react';
-import { NewPartnerModal } from './NewPartnerModal';
+import { NewClientModal } from './NewClientModal';
 import { OptInModule } from './OptInModule';
+import { showToast } from '../hooks/useToast';
+import { listClientes, type ClienteDTO } from '../services/optinApi';
 
 interface Partner {
   id: string;
@@ -10,35 +12,44 @@ interface Partner {
   type: 'client';
   email: string;
   phone: string;
-  status: 'active' | 'inactive';
+  status: ClienteDTO['status'];
 }
 
-const mockPartners: Partner[] = [
-  {
-    id: '1',
-    name: 'Empresa Cliente A',
-    document: '12.345.678/0001-90',
+function clienteDtoParaPartner(dto: ClienteDTO): Partner {
+  return {
+    id: dto.id,
+    name: dto.nome,
+    document: dto.documento,
     type: 'client',
-    email: 'contato@clientea.com',
-    phone: '(11) 98765-4321',
-    status: 'active',
-  },
-  {
-    id: '2',
-    name: 'Empresa Cliente B',
-    document: '98.765.432/0001-10',
-    type: 'client',
-    email: 'financeiro@clienteb.com',
-    phone: '(11) 91234-5678',
-    status: 'active',
-  }
-];
+    email: dto.email ?? '',
+    phone: dto.telefone ?? '',
+    status: dto.status,
+  };
+}
 
 export const PartnerRegistrationModule: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'clients' | 'opt-in'>('clients');
   const [isNewPartnerModalOpen, setIsNewPartnerModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [partners, setPartners] = useState<Partner[]>(mockPartners);
+  const [partners, setPartners] = useState<Partner[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadPartners = async () => {
+    setIsLoading(true);
+    try {
+      const dados = await listClientes();
+      setPartners(dados.map(clienteDtoParaPartner));
+    } catch (err) {
+      console.error('Error loading clientes:', err);
+      showToast('error', 'Erro ao carregar clientes');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPartners();
+  }, []);
 
   const filteredPartners = partners.filter(
     partner =>
@@ -103,7 +114,11 @@ export const PartnerRegistrationModule: React.FC = () => {
             </div>
           </div>
 
-          {filteredPartners.length === 0 ? (
+          {isLoading ? (
+            <div className="text-center py-12">
+              <p className="text-gray-600">Carregando clientes...</p>
+            </div>
+          ) : filteredPartners.length === 0 ? (
             <div className="text-center py-12">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
                 <Users className="w-8 h-8 text-gray-400" />
@@ -137,10 +152,12 @@ export const PartnerRegistrationModule: React.FC = () => {
                             className={`px-2 py-1 rounded-full text-xs font-medium ${
                               partner.status === 'active'
                                 ? 'bg-green-100 text-green-700'
+                                : partner.status === 'pending'
+                                ? 'bg-yellow-100 text-yellow-700'
                                 : 'bg-gray-100 text-gray-700'
                             }`}
                           >
-                            {partner.status === 'active' ? 'Ativo' : 'Inativo'}
+                            {partner.status === 'active' ? 'Ativo' : partner.status === 'pending' ? 'Pendente' : 'Inativo'}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-sm text-right">
@@ -163,23 +180,13 @@ export const PartnerRegistrationModule: React.FC = () => {
       </div>
       )}
 
-      <NewPartnerModal
+      <NewClientModal
         isOpen={isNewPartnerModalOpen}
-        onClose={() => setIsNewPartnerModalOpen(false)}
-        partnerType="client"
-        onSave={(partnerData) => {
-          setPartners(prev => [
-            {
-              id: `partner-${Date.now()}`,
-              name: partnerData.name,
-              document: partnerData.document,
-              type: 'client',
-              email: partnerData.email,
-              phone: partnerData.phone,
-              status: partnerData.status,
-            },
-            ...prev,
-          ]);
+        onClose={() => { loadPartners(); setIsNewPartnerModalOpen(false); }}
+        onSave={(clientData) => {
+          const nomes = Array.isArray(clientData) ? clientData.map(c => c.name).join(', ') : clientData.name;
+          showToast('success', 'Cliente criado!', `${nomes} foi adicionado com sucesso`);
+          loadPartners();
           setIsNewPartnerModalOpen(false);
         }}
       />

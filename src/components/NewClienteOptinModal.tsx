@@ -30,8 +30,18 @@ export const NewClienteOptinModal: React.FC<NewClienteOptinModalProps> = ({ isOp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
     setError(null);
+
+    if (!documento.replace(/\D/g, '').trim()) {
+      setError('Informe o CNPJ/CPF do cliente');
+      return;
+    }
+    if (!nome.trim()) {
+      setError('Informe o nome do cliente');
+      return;
+    }
+
+    setIsSubmitting(true);
 
     try {
       const cliente = await createCliente({
@@ -70,7 +80,7 @@ export const NewClienteOptinModal: React.FC<NewClienteOptinModalProps> = ({ isOp
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {error}
