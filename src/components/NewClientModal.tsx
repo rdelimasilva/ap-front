@@ -35,7 +35,7 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose,
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEscapeKey(() => {
-    if (isOpen) onClose();
+    if (isOpen && !isSubmitting) onClose();
   });
 
   if (!isOpen) return null;
@@ -207,7 +207,8 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose,
           <h2 className="text-xl font-bold text-gray-900">Novo Cliente</h2>
           <button
             onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            disabled={isSubmitting}
+            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <X className="w-6 h-6" />
           </button>
