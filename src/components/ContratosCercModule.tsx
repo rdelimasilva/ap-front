@@ -3,6 +3,7 @@ import { Search, Plus, RefreshCw } from 'lucide-react';
 import { showToast } from '../hooks/useToast';
 import { listContratos, type ContratoDTO } from '../services/contratosApi';
 import { NewContratoModal } from './NewContratoModal';
+import { ContratoDetailModal } from './ContratoDetailModal';
 
 const STATUS_LABEL: Record<string, string> = {
   ENVIANDO: 'Enviando',
@@ -56,7 +57,6 @@ export const ContratosCercModule: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFiltro, setStatusFiltro] = useState('');
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [contratoSelecionadoId, setContratoSelecionadoId] = useState<string | null>(null);
 
   const carregar = async () => {
@@ -161,7 +161,11 @@ export const ContratosCercModule: React.FC = () => {
         onCreated={carregar}
       />
 
-      {/* ContratoDetailModal plugado na Task 7 — usa contratoSelecionadoId/setContratoSelecionadoId(null) */}
+      <ContratoDetailModal
+        contratoId={contratoSelecionadoId}
+        onClose={() => setContratoSelecionadoId(null)}
+        onChanged={carregar}
+      />
     </div>
   );
 };
