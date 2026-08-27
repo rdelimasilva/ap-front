@@ -16,7 +16,9 @@ export interface ClienteDTO {
   nome: string;
   email?: string | null;
   telefone?: string | null;
+  status: 'active' | 'inactive' | 'pending';
   criadoEm: string;
+  atualizadoEm: string;
 }
 
 export interface OptinDTO {
@@ -135,4 +137,15 @@ export function getCliente(id: string): Promise<ClienteDTO> {
 
 export function createCliente(payload: CriarClientePayload): Promise<ClienteDTO> {
   return request<ClienteDTO>('POST', '/clientes', { body: payload });
+}
+
+export interface AtualizarClientePayload {
+  nome?: string;
+  email?: string;
+  telefone?: string;
+  status?: string;
+}
+
+export function updateCliente(id: string, payload: AtualizarClientePayload): Promise<ClienteDTO> {
+  return request<ClienteDTO>('PATCH', `/clientes/${id}`, { body: payload });
 }
