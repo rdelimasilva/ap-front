@@ -14,6 +14,7 @@ import { ContractApprovalBoard } from './components/ContractApprovalBoard';
 import { FormalizationModule } from './components/FormalizationModule';
 
 import { OptInModule } from './components/OptInModule';
+import { ContratosCercModule } from './components/ContratosCercModule';
 
 import { PartnerRegistrationModule } from './components/PartnerRegistrationModule';
 import { OverviewModule } from './components/OverviewModule';
@@ -307,6 +308,7 @@ function App() {
     'contracts-menu': 'Operações',
     'contract-approval': 'Aprovação de Contratos',
     'contracts': 'Contratos',
+    'contratos-cerc': 'Registro CERC',
     'formalization': 'Formalização',
     'contracts-monitoring': 'Contratos',
     'settlement-control': 'Liquidações',
@@ -443,6 +445,8 @@ function App() {
             onEditClient={(client) => setEditingClient(client)}
           />
         );
+      case 'contratos-cerc':
+        return <ContratosCercModule />;
       case 'formalization':
         return <FormalizationModule clients={appClients} />;
       case 'contracts-monitoring':
