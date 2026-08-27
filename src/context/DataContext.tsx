@@ -108,7 +108,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     let atualizadoViaApi: Partial<Client> = {};
     if (Object.keys(payloadCadastro).length > 0) {
       const dto = await updateCliente(clientId, payloadCadastro);
-      atualizadoViaApi = clienteDtoParaClient(dto);
+      atualizadoViaApi = {
+        name: dto.nome,
+        email: dto.email ?? '',
+        phone: dto.telefone ?? '',
+        status: dto.status,
+      };
     }
 
     setClients(prev => prev.map(c => {

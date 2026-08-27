@@ -519,7 +519,7 @@ function App() {
         </div>
         <NewClientModal
           isOpen={showNewClientModal}
-          onClose={() => setShowNewClientModal(false)}
+          onClose={() => { reloadClients(); setShowNewClientModal(false); }}
           onSave={(clientData) => {
             const nomes = Array.isArray(clientData) ? clientData.map(c => c.name).join(', ') : clientData.name;
             addToast('success', 'Cliente criado!', `${nomes} foi adicionado com sucesso`);
