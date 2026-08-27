@@ -133,7 +133,7 @@ function montarPayload(
     },
     regrasDivisao: form.regrasDivisao,
     valorAOnerar: paraNumero(form.valorAOnerar),
-    tipoDistribuicao: form.tipoDistribuicao || undefined,
+    tipoDistribuicao: form.identificacaoGestaoEntidadeRegistradora === '1' ? (form.tipoDistribuicao || undefined) : undefined,
   };
 
   return {
