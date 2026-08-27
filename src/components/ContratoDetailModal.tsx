@@ -19,7 +19,11 @@ interface ContratoDetailModalProps {
 
 function formatarData(iso: string | null): string {
   if (!iso) return '—';
-  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso));
+  // Datas "só data" (YYYY-MM-DD, sem T) são interpretadas como UTC pelo
+  // Date nativo — em fusos negativos (ex.: America/Sao_Paulo) isso exibia
+  // um dia a menos. Forçar meia-noite local quando não há componente de hora.
+  const data = iso.includes('T') ? new Date(iso) : new Date(`${iso}T00:00:00`);
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(data);
 }
 
 function formatarValor(v: number | null): string {
