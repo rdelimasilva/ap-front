@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, FileText, CheckCircle, Calendar, Hash, Building2, Edit2, Save, Loader2 } from 'lucide-react';
+import { X, FileText, CheckCircle, AlertTriangle, Calendar, Hash, Building2, Edit2, Save, Loader2, Ban } from 'lucide-react';
 import { showToast } from '../hooks/useToast';
-import { updateOptin, OptinApiError, type OptinDTO } from '../services/optinApi';
+import { updateOptin, cancelOptin, OptinApiError, type OptinDTO } from '../services/optinApi';
 
 interface OptInRegistroModalProps {
   isOpen: boolean;
@@ -13,6 +13,7 @@ interface OptInRegistroModalProps {
 export const OptInRegistroModal: React.FC<OptInRegistroModalProps> = ({ isOpen, onClose, optin, onUpdated }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [vigenciaFim, setVigenciaFim] = useState('');
   const [carteira, setCarteira] = useState('');
@@ -33,6 +34,7 @@ export const OptInRegistroModal: React.FC<OptInRegistroModalProps> = ({ isOpen, 
       case 'REJEITADO': return 'bg-red-100 text-red-800 border-red-200';
       case 'FALHA_ENVIO': return 'bg-red-100 text-red-800 border-red-200';
       case 'PENDENTE': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'ENCERRADO': return 'bg-gray-200 text-gray-700 border-gray-300';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
@@ -43,6 +45,7 @@ export const OptInRegistroModal: React.FC<OptInRegistroModalProps> = ({ isOpen, 
       case 'REJEITADO': return 'Rejeitado pela CERC';
       case 'FALHA_ENVIO': return 'Falha no envio';
       case 'PENDENTE': return 'Pendente';
+      case 'ENCERRADO': return 'Encerrado';
       default: return 'Desconhecido';
     }
   };
@@ -74,6 +77,30 @@ export const OptInRegistroModal: React.FC<OptInRegistroModalProps> = ({ isOpen, 
     }
   };
 
+  const handleCancelOptin = async () => {
+    const confirmado = window.confirm(
+      'Tem certeza que deseja cancelar este opt-in? Essa ação encerra o opt-in de verdade na CERC e não pode ser desfeita.'
+    );
+    if (!confirmado) return;
+
+    setIsCancelling(true);
+    setError(null);
+    try {
+      await cancelOptin(optin.id);
+      showToast('success', 'Opt-in cancelado!');
+      onUpdated();
+      onClose();
+    } catch (err) {
+      if (err instanceof OptinApiError) {
+        setError(err.message);
+      } else {
+        setError('Erro desconhecido ao cancelar opt-in');
+      }
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
@@ -84,7 +111,7 @@ export const OptInRegistroModal: React.FC<OptInRegistroModalProps> = ({ isOpen, 
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-900">Dados do Opt-In</h2>
-              <p className="text-sm text-gray-600">Registro CERC da unidade recebível</p>
+              <p className="text-sm text-gray-600">Registro CERC do opt-in</p>
             </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
@@ -114,6 +141,30 @@ export const OptInRegistroModal: React.FC<OptInRegistroModalProps> = ({ isOpen, 
               </div>
             )}
           </div>
+
+          {(optin.status === 'REJEITADO' || optin.status === 'FALHA_ENVIO') && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-red-800 mb-2">Motivo (retorno da CERC)</p>
+                  {optin.errosCerc && optin.errosCerc.length > 0 ? (
+                    <ul className="space-y-1">
+                      {optin.errosCerc.map((erro, idx) => (
+                        <li key={idx} className="text-sm text-red-700">
+                          <span className="font-medium">{erro.codigo}</span> — {erro.mensagem}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-red-700">
+                      Motivo não informado pelo backend. Consulte o protocolo acima diretamente com a CERC.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="bg-gray-50 rounded-lg p-6 space-y-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Cliente</h3>
@@ -153,7 +204,7 @@ export const OptInRegistroModal: React.FC<OptInRegistroModalProps> = ({ isOpen, 
 
           <div className="bg-gray-50 rounded-lg p-6 space-y-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Unidade Recebível</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Detalhes do Opt-In</h3>
               {optin.status === 'ATIVO' && !isEditing && (
                 <button onClick={startEditing} className="text-sm text-blue-600 hover:text-blue-700 flex items-center space-x-1">
                   <Edit2 className="w-4 h-4" />
@@ -163,6 +214,27 @@ export const OptInRegistroModal: React.FC<OptInRegistroModalProps> = ({ isOpen, 
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-start space-x-3">
+                <Hash className="w-5 h-5 text-gray-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-500">Referência Externa</p>
+                  <p className="text-base text-gray-900">{optin.referenciaExterna}</p>
+                </div>
+              </div>
+              <div className="flex items-start space-x-3">
+                <Hash className="w-5 h-5 text-gray-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-500">CNPJ Solicitante</p>
+                  <p className="text-base text-gray-900">{optin.cnpjSolicitante}</p>
+                </div>
+              </div>
+              <div className="flex items-start space-x-3">
+                <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-500">Data de Assinatura</p>
+                  <p className="text-base text-gray-900">{formatDate(optin.dataAssinatura)}</p>
+                </div>
+              </div>
               <div className="flex items-start space-x-3">
                 <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
                 <div className="flex-1">
@@ -239,9 +311,21 @@ export const OptInRegistroModal: React.FC<OptInRegistroModalProps> = ({ isOpen, 
                 </button>
               </>
             ) : (
-              <button onClick={onClose} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
-                Fechar
-              </button>
+              <>
+                {optin.status === 'ATIVO' && (
+                  <button
+                    onClick={handleCancelOptin}
+                    disabled={isCancelling}
+                    className="px-6 py-2 border border-red-300 rounded-lg text-red-700 hover:bg-red-50 transition-colors flex items-center space-x-2 disabled:opacity-50"
+                  >
+                    {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+                    <span>Cancelar Opt-In</span>
+                  </button>
+                )}
+                <button onClick={onClose} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
+                  Fechar
+                </button>
+              </>
             )}
           </div>
         </div>

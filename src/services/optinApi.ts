@@ -21,12 +21,17 @@ export interface ClienteDTO {
   atualizadoEm: string;
 }
 
+export interface OptinErroCerc {
+  codigo: string;
+  mensagem: string;
+}
+
 export interface OptinDTO {
   id: string;
   referenciaExterna: string;
   protocoloCerc: string | null;
   origem: string;
-  status: 'PENDENTE' | 'ATIVO' | 'REJEITADO' | 'FALHA_ENVIO';
+  status: 'PENDENTE' | 'ATIVO' | 'REJEITADO' | 'FALHA_ENVIO' | 'ENCERRADO';
   clienteId: string;
   clienteNome: string | null;
   cnpjSolicitante: string;
@@ -40,6 +45,7 @@ export interface OptinDTO {
   credenciadoras: string[];
   arranjos: string[];
   criadoEm: string;
+  errosCerc?: OptinErroCerc[] | null;
 }
 
 export interface CriarOptinPayload {
@@ -125,6 +131,10 @@ export function createOptin(payload: CriarOptinPayload): Promise<OptinDTO> {
 
 export function updateOptin(id: string, payload: AtualizarOptinPayload): Promise<OptinDTO> {
   return request<OptinDTO>('PATCH', `/optins/${id}`, { body: payload, idempotent: true });
+}
+
+export function cancelOptin(id: string): Promise<OptinDTO> {
+  return request<OptinDTO>('POST', `/optins/${id}/cancelar`, { idempotent: true });
 }
 
 export function listClientes(filtros: { documento?: string; limit?: number } = {}): Promise<ClienteDTO[]> {

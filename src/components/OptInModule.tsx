@@ -56,6 +56,7 @@ export const OptInModule: React.FC = () => {
       case 'REJEITADO': return 'bg-red-100 text-red-800';
       case 'FALHA_ENVIO': return 'bg-red-100 text-red-800';
       case 'PENDENTE': return 'bg-yellow-100 text-yellow-800';
+      case 'ENCERRADO': return 'bg-gray-200 text-gray-700';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -66,6 +67,7 @@ export const OptInModule: React.FC = () => {
       case 'REJEITADO': return 'Rejeitado pela CERC';
       case 'FALHA_ENVIO': return 'Falha no envio';
       case 'PENDENTE': return 'Pendente';
+      case 'ENCERRADO': return 'Encerrado';
       default: return 'Desconhecido';
     }
   };
@@ -76,6 +78,7 @@ export const OptInModule: React.FC = () => {
       case 'REJEITADO': return <XCircle className="w-4 h-4" />;
       case 'FALHA_ENVIO': return <XCircle className="w-4 h-4" />;
       case 'PENDENTE': return <Clock className="w-4 h-4" />;
+      case 'ENCERRADO': return <XCircle className="w-4 h-4" />;
       default: return <Clock className="w-4 h-4" />;
     }
   };
@@ -178,6 +181,7 @@ export const OptInModule: React.FC = () => {
                 <option value="REJEITADO">Rejeitado pela CERC</option>
                 <option value="FALHA_ENVIO">Falha no envio</option>
                 <option value="PENDENTE">Pendente</option>
+                <option value="ENCERRADO">Encerrado</option>
               </select>
               <button
                 onClick={() => setIsNewOptInModalOpen(true)}
