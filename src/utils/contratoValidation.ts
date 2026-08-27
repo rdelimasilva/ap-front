@@ -59,8 +59,26 @@ function validarCnpj(cnpj: string): boolean {
 }
 
 export function validarC01Documento(raw: string, campo: string): string {
-  const documento = normalizarDocumento(raw);
-  const tipo = tipoDocumento(documento);
+  let documento: string;
+  try {
+    documento = normalizarDocumento(raw);
+  } catch (e) {
+    if (e instanceof ValidacaoError) {
+      throw new ValidacaoError(campo, e.message);
+    }
+    throw e;
+  }
+
+  let tipo: 'CNPJ_RAIZ' | 'CPF' | 'CNPJ';
+  try {
+    tipo = tipoDocumento(documento);
+  } catch (e) {
+    if (e instanceof ValidacaoError) {
+      throw new ValidacaoError(campo, e.message);
+    }
+    throw e;
+  }
+
   if (tipo === 'CPF' && !validarCpf(documento)) throw new ValidacaoError(campo, 'dígito verificador de CPF inválido');
   if (tipo === 'CNPJ' && !validarCnpj(documento)) throw new ValidacaoError(campo, 'dígito verificador de CNPJ inválido');
   return documento;
