@@ -76,7 +76,7 @@ const LazyAccessManagementModule = React.lazy(() =>
 );
 
 function App() {
-  const { clients: appClients, contracts: appContractsData, isLoading: _dataLoading, updateClient } = useData();
+  const { clients: appClients, contracts: appContractsData, isLoading: _dataLoading, updateClient, retry: reloadClients } = useData();
   const isSignaturePage = window.location.pathname.startsWith('/optin-signature/');
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return localStorage.getItem('isAuthenticated') === 'true';
@@ -521,7 +521,9 @@ function App() {
           isOpen={showNewClientModal}
           onClose={() => setShowNewClientModal(false)}
           onSave={(clientData) => {
-            addToast('success', 'Cliente criado!', `${clientData.name} foi adicionado com sucesso`);
+            const nomes = Array.isArray(clientData) ? clientData.map(c => c.name).join(', ') : clientData.name;
+            addToast('success', 'Cliente criado!', `${nomes} foi adicionado com sucesso`);
+            reloadClients();
             setShowNewClientModal(false);
           }}
         />
@@ -538,9 +540,14 @@ function App() {
             onClose={() => setEditingClient(null)}
             client={editingClient}
             onSave={(clientId, data) => {
-              updateClient(clientId, data);
-              addToast('success', 'Cliente atualizado com sucesso!');
-              setEditingClient(null);
+              updateClient(clientId, data)
+                .then(() => {
+                  addToast('success', 'Cliente atualizado com sucesso!');
+                  setEditingClient(null);
+                })
+                .catch((err) => {
+                  addToast('error', 'Erro ao atualizar cliente', err instanceof Error ? err.message : undefined);
+                });
             }}
           />
         )}
