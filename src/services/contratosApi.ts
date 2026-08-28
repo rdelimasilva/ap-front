@@ -155,10 +155,23 @@ async function request<T>(method: string, path: string, options: RequestOptions 
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
 
   if (!response.ok) {
-    throw new ContratosApiError(data?.codigo ?? 'ERRO_DESCONHECIDO', data?.erro ?? 'erro desconhecido', response.status);
+    const corpo = (data && typeof data === 'object' ? data : {}) as { codigo?: string; erro?: string; erros?: Array<{ codigo?: string; mensagem?: string } | string> };
+    if (corpo.codigo || corpo.erro) {
+      throw new ContratosApiError(corpo.codigo ?? 'ERRO_DESCONHECIDO', corpo.erro ?? 'erro desconhecido', response.status);
+    }
+    if (Array.isArray(corpo.erros) && corpo.erros.length > 0) {
+      const mensagens = corpo.erros.map(e => (typeof e === 'string' ? e : e.mensagem ?? e.codigo ?? JSON.stringify(e)));
+      throw new ContratosApiError('REJEITADO_ESTRUTURAL', mensagens.join('; '), response.status);
+    }
+    throw new ContratosApiError(`HTTP_${response.status}`, `resposta ${response.status} sem corpo de erro reconhecível`, response.status);
   }
 
   return data as T;
@@ -181,8 +194,8 @@ export function getContrato(id: string): Promise<ContratoDetalheDTO> {
   return request<ContratoDetalheDTO>('GET', `/contratos/${FINANCIADOR_ID}/${id}`);
 }
 
-export function criarContrato(payload: CriarContratoPayload): Promise<ContratoDTO> {
-  return request<ContratoDTO>('POST', `/contratos/${FINANCIADOR_ID}`, { body: payload });
+export function criarContrato(payload: CriarContratoPayload): Promise<OperacaoPosRegistroResultado> {
+  return request<OperacaoPosRegistroResultado>('POST', `/contratos/${FINANCIADOR_ID}`, { body: payload });
 }
 
 export function inativarContrato(referenciaExterna: string): Promise<OperacaoPosRegistroResultado> {

@@ -192,7 +192,7 @@ export function validarPayloadContrato(payload: CriarContratoPayload, hoje: stri
     registrar(() => validarC07RegraDivisaoPercentual(g.regrasDivisao, g.valorAOnerar));
     registrar(() => validarC08DataInicioFutura(g.definicaoUnidadeRecebivel.dataInicio, hoje));
     registrar(() => validarC09OrdemDatas(g.definicaoUnidadeRecebivel.dataInicio, g.definicaoUnidadeRecebivel.dataFim));
-    const ehRaiz = (g.definicaoUnidadeRecebivel.documentoTitular ?? '').length === 8;
+    const ehRaiz = (g.definicaoUnidadeRecebivel.documentoUsuarioFinalRecebedor ?? '').length === 8;
     registrar(() => validarC10RaizTitularIgualUfr(
       g.definicaoUnidadeRecebivel.documentoTitular ?? '',
       g.definicaoUnidadeRecebivel.documentoUsuarioFinalRecebedor ?? '',

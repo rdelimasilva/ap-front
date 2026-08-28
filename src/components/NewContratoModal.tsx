@@ -142,7 +142,7 @@ function montarPayload(
     identificadorContrato: form.identificadorContrato,
     documentoContratante: form.documentoContratante,
     repactuacao: form.repactuacao,
-    identificacaoContratosAnteriores: listaDeTexto(form.identificacaoContratosAnterioresRaw),
+    identificacaoContratosAnteriores: repactuado ? listaDeTexto(form.identificacaoContratosAnterioresRaw) : undefined,
     cnpjDetentor: form.cnpjDetentor,
     tipoEfeito: form.tipoEfeito,
     saldoDevedor: paraNumero(form.saldoDevedor),
@@ -218,7 +218,7 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
     setBannerErro(null);
 
     const payload = montarPayload(form, todasCredenciadoras, credenciadorasRaw, todosArranjos, arranjosRaw, parcelas);
-    const hoje = new Date().toISOString().split('T')[0];
+    const hoje = new Date().toLocaleDateString('sv-SE');
     const errosValidacao = validarPayloadContrato(payload, hoje);
     setErros(errosValidacao);
     if (Object.keys(errosValidacao).length > 0) return;
@@ -263,19 +263,19 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Dados do contrato</h3>
             <div className="grid grid-cols-2 gap-4">
               <Campo label="Referência externa" obrigatorio erro={erros.referenciaExterna}>
-                <input className={inputClass(!!erros.referenciaExterna)} value={form.referenciaExterna} onChange={e => set('referenciaExterna', e.target.value)} />
+                <input required className={inputClass(!!erros.referenciaExterna)} value={form.referenciaExterna} onChange={e => set('referenciaExterna', e.target.value)} />
               </Campo>
               <Campo label="Identificador do contrato" obrigatorio erro={erros.identificadorContrato}>
-                <input className={inputClass(!!erros.identificadorContrato)} value={form.identificadorContrato} onChange={e => set('identificadorContrato', e.target.value)} />
+                <input required className={inputClass(!!erros.identificadorContrato)} value={form.identificadorContrato} onChange={e => set('identificadorContrato', e.target.value)} />
               </Campo>
               <Campo label="Documento do contratante (CPF/CNPJ)" obrigatorio erro={erros.documentoContratante}>
-                <input className={inputClass(!!erros.documentoContratante)} value={form.documentoContratante} onChange={e => set('documentoContratante', e.target.value)} />
+                <input required className={inputClass(!!erros.documentoContratante)} value={form.documentoContratante} onChange={e => set('documentoContratante', e.target.value)} />
               </Campo>
               <Campo label="CNPJ do detentor" obrigatorio erro={erros.cnpjDetentor}>
-                <input className={inputClass(!!erros.cnpjDetentor)} value={form.cnpjDetentor} onChange={e => set('cnpjDetentor', e.target.value)} />
+                <input required className={inputClass(!!erros.cnpjDetentor)} value={form.cnpjDetentor} onChange={e => set('cnpjDetentor', e.target.value)} />
               </Campo>
               <Campo label="Tipo de efeito" obrigatorio erro={erros.tipoEfeito}>
-                <select className={inputClass()} value={form.tipoEfeito} onChange={e => set('tipoEfeito', e.target.value as FormState['tipoEfeito'])}>
+                <select required className={inputClass()} value={form.tipoEfeito} onChange={e => set('tipoEfeito', e.target.value as FormState['tipoEfeito'])}>
                   {TIPOS_EFEITO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </Campo>
@@ -292,31 +292,31 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
               </Campo>
               {repactuado && (
                 <Campo label="Contratos anteriores (separados por vírgula)" obrigatorio erro={erros.identificacaoContratosAnteriores}>
-                  <input className={inputClass(!!erros.identificacaoContratosAnteriores)} value={form.identificacaoContratosAnterioresRaw} onChange={e => set('identificacaoContratosAnterioresRaw', e.target.value)} />
+                  <input required className={inputClass(!!erros.identificacaoContratosAnteriores)} value={form.identificacaoContratosAnterioresRaw} onChange={e => set('identificacaoContratosAnterioresRaw', e.target.value)} />
                 </Campo>
               )}
               <Campo label="Saldo devedor" obrigatorio erro={erros.saldoDevedor}>
-                <input className={inputClass(!!erros.saldoDevedor)} value={form.saldoDevedor} onChange={e => set('saldoDevedor', e.target.value)} placeholder="150000.00" />
+                <input required className={inputClass(!!erros.saldoDevedor)} value={form.saldoDevedor} onChange={e => set('saldoDevedor', e.target.value)} placeholder="150000.00" />
               </Campo>
               <Campo label="Limite da operação garantida" obrigatorio erro={erros.limiteOperacaoGarantida}>
-                <input className={inputClass(!!erros.limiteOperacaoGarantida)} value={form.limiteOperacaoGarantida} onChange={e => set('limiteOperacaoGarantida', e.target.value)} placeholder="200000.00" />
+                <input required className={inputClass(!!erros.limiteOperacaoGarantida)} value={form.limiteOperacaoGarantida} onChange={e => set('limiteOperacaoGarantida', e.target.value)} placeholder="200000.00" />
               </Campo>
               <Campo label="Valor mantido" obrigatorio erro={erros.valorMantido}>
-                <input className={inputClass(!!erros.valorMantido)} value={form.valorMantido} onChange={e => set('valorMantido', e.target.value)} placeholder="180000.00" />
+                <input required className={inputClass(!!erros.valorMantido)} value={form.valorMantido} onChange={e => set('valorMantido', e.target.value)} placeholder="180000.00" />
               </Campo>
               <Campo label="Data de assinatura" obrigatorio>
-                <input type="date" className={inputClass()} value={form.dataAssinatura} onChange={e => set('dataAssinatura', e.target.value)} />
+                <input required type="date" className={inputClass()} value={form.dataAssinatura} onChange={e => set('dataAssinatura', e.target.value)} />
               </Campo>
               <Campo label="Data de vencimento" obrigatorio>
-                <input type="date" className={inputClass()} value={form.dataVencimento} onChange={e => set('dataVencimento', e.target.value)} />
+                <input required type="date" className={inputClass()} value={form.dataVencimento} onChange={e => set('dataVencimento', e.target.value)} />
               </Campo>
               <Campo label="Gestão da entidade registradora" obrigatorio>
-                <select className={inputClass()} value={form.identificacaoGestaoEntidadeRegistradora} onChange={e => set('identificacaoGestaoEntidadeRegistradora', e.target.value as FormState['identificacaoGestaoEntidadeRegistradora'])}>
+                <select required className={inputClass()} value={form.identificacaoGestaoEntidadeRegistradora} onChange={e => set('identificacaoGestaoEntidadeRegistradora', e.target.value as FormState['identificacaoGestaoEntidadeRegistradora'])}>
                   {TIPOS_GESTAO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </Campo>
               <Campo label="Modalidade da operação" obrigatorio>
-                <select className={inputClass()} value={form.modalidadeOperacao} onChange={e => set('modalidadeOperacao', e.target.value as FormState['modalidadeOperacao'])}>
+                <select required className={inputClass()} value={form.modalidadeOperacao} onChange={e => set('modalidadeOperacao', e.target.value as FormState['modalidadeOperacao'])}>
                   {MODALIDADES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </Campo>
@@ -360,20 +360,20 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
               <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Garantia</h3>
               <div className="grid grid-cols-2 gap-4">
                 <Campo label="Referência externa da garantia" obrigatorio erro={erros.garantiaReferenciaExterna}>
-                  <input className={inputClass(!!erros.garantiaReferenciaExterna)} value={form.garantiaReferenciaExterna} onChange={e => set('garantiaReferenciaExterna', e.target.value)} />
+                  <input required className={inputClass(!!erros.garantiaReferenciaExterna)} value={form.garantiaReferenciaExterna} onChange={e => set('garantiaReferenciaExterna', e.target.value)} />
                 </Campo>
                 <Campo label="Regra de divisão" obrigatorio>
-                  <select className={inputClass()} value={form.regrasDivisao} onChange={e => set('regrasDivisao', e.target.value as FormState['regrasDivisao'])}>
+                  <select required className={inputClass()} value={form.regrasDivisao} onChange={e => set('regrasDivisao', e.target.value as FormState['regrasDivisao'])}>
                     <option value="1">1 — Valor definido</option>
                     <option value="2">2 — Percentual</option>
                   </select>
                 </Campo>
                 <Campo label={form.regrasDivisao === '2' ? 'Percentual a onerar (até 100)' : 'Valor a onerar'} obrigatorio erro={erros.valorAOnerar}>
-                  <input className={inputClass(!!erros.valorAOnerar)} value={form.valorAOnerar} onChange={e => set('valorAOnerar', e.target.value)} />
+                  <input required className={inputClass(!!erros.valorAOnerar)} value={form.valorAOnerar} onChange={e => set('valorAOnerar', e.target.value)} />
                 </Campo>
                 {form.identificacaoGestaoEntidadeRegistradora === '1' && (
                   <Campo label="Tipo de distribuição" obrigatorio erro={erros.tipoDistribuicao}>
-                    <select className={inputClass(!!erros.tipoDistribuicao)} value={form.tipoDistribuicao} onChange={e => set('tipoDistribuicao', e.target.value as FormState['tipoDistribuicao'])}>
+                    <select required className={inputClass(!!erros.tipoDistribuicao)} value={form.tipoDistribuicao} onChange={e => set('tipoDistribuicao', e.target.value as FormState['tipoDistribuicao'])}>
                       <option value="">—</option>
                       <option value="padrao_empilhamento_ap">Padrão empilhamento</option>
                       <option value="padrao_pro_rata_ap">Padrão pro-rata</option>
@@ -385,13 +385,13 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
               <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Domicílio de pagamento</h4>
               <div className="grid grid-cols-2 gap-4">
                 <Campo label="Documento do titular" obrigatorio erro={erros.domicilioNumeroDocumentoTitular}>
-                  <input className={inputClass(!!erros.domicilioNumeroDocumentoTitular)} value={form.domicilioNumeroDocumentoTitular} onChange={e => set('domicilioNumeroDocumentoTitular', e.target.value)} />
+                  <input required className={inputClass(!!erros.domicilioNumeroDocumentoTitular)} value={form.domicilioNumeroDocumentoTitular} onChange={e => set('domicilioNumeroDocumentoTitular', e.target.value)} />
                 </Campo>
                 <Campo label="Nome do titular (opcional)">
                   <input className={inputClass()} value={form.domicilioNomeTitular} onChange={e => set('domicilioNomeTitular', e.target.value)} />
                 </Campo>
                 <Campo label="Tipo de conta" obrigatorio>
-                  <select className={inputClass()} value={form.domicilioTipoConta} onChange={e => set('domicilioTipoConta', e.target.value as FormState['domicilioTipoConta'])}>
+                  <select required className={inputClass()} value={form.domicilioTipoConta} onChange={e => set('domicilioTipoConta', e.target.value as FormState['domicilioTipoConta'])}>
                     {TIPOS_CONTA.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </Campo>
@@ -399,13 +399,13 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
                   <input className={inputClass(!!erros.domicilioCompe)} value={form.domicilioCompe} onChange={e => set('domicilioCompe', e.target.value)} maxLength={3} />
                 </Campo>
                 <Campo label="ISPB (8 dígitos)" obrigatorio erro={erros.domicilioIspb}>
-                  <input className={inputClass(!!erros.domicilioIspb)} value={form.domicilioIspb} onChange={e => set('domicilioIspb', e.target.value)} maxLength={8} />
+                  <input required className={inputClass(!!erros.domicilioIspb)} value={form.domicilioIspb} onChange={e => set('domicilioIspb', e.target.value)} maxLength={8} />
                 </Campo>
                 <Campo label="Agência (até 8 dígitos, sem DV)" obrigatorio erro={erros.domicilioAgencia}>
-                  <input className={inputClass(!!erros.domicilioAgencia)} value={form.domicilioAgencia} onChange={e => set('domicilioAgencia', e.target.value)} maxLength={8} />
+                  <input required className={inputClass(!!erros.domicilioAgencia)} value={form.domicilioAgencia} onChange={e => set('domicilioAgencia', e.target.value)} maxLength={8} />
                 </Campo>
                 <Campo label="Número da conta (com DV/hífen se CC/CD/PP)" obrigatorio erro={erros.domicilioNumeroConta}>
-                  <input className={inputClass(!!erros.domicilioNumeroConta)} value={form.domicilioNumeroConta} onChange={e => set('domicilioNumeroConta', e.target.value)} placeholder="464561-6" />
+                  <input required className={inputClass(!!erros.domicilioNumeroConta)} value={form.domicilioNumeroConta} onChange={e => set('domicilioNumeroConta', e.target.value)} placeholder="464561-6" />
                 </Campo>
               </div>
 
@@ -434,10 +434,10 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
                   <input className={inputClass(!!erros.definicaoDocumentoTitular)} value={form.definicaoDocumentoTitular} onChange={e => set('definicaoDocumentoTitular', e.target.value)} />
                 </Campo>
                 <Campo label="Início da janela de liquidação" obrigatorio erro={erros.definicaoDataInicio}>
-                  <input type="date" className={inputClass(!!erros.definicaoDataInicio)} value={form.definicaoDataInicio} onChange={e => set('definicaoDataInicio', e.target.value)} />
+                  <input required type="date" className={inputClass(!!erros.definicaoDataInicio)} value={form.definicaoDataInicio} onChange={e => set('definicaoDataInicio', e.target.value)} />
                 </Campo>
                 <Campo label="Fim da janela de liquidação" obrigatorio erro={erros.definicaoDataFim}>
-                  <input type="date" className={inputClass(!!erros.definicaoDataFim)} value={form.definicaoDataFim} onChange={e => set('definicaoDataFim', e.target.value)} />
+                  <input required type="date" className={inputClass(!!erros.definicaoDataFim)} value={form.definicaoDataFim} onChange={e => set('definicaoDataFim', e.target.value)} />
                 </Campo>
               </div>
             </section>
