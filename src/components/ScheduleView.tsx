@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { TrendingUp, Lock, CheckCircle, Calendar, ArrowLeft, Eye, FileText, Plus, Filter, Search, Activity, ChevronDown, ChevronRight, CreditCard, Shield, DollarSign, RefreshCw, Zap, ArrowRight, X, ArrowUpDown, ArrowUp, ArrowDown, Clock } from 'lucide-react';
 import { Client } from '../types';
 import { NewOptInModal } from './NewOptInModal';
@@ -187,6 +187,8 @@ interface OptInClient {
 
 export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const selectedClientRef = useRef(selectedClient);
+  selectedClientRef.current = selectedClient;
   const [bloqueadoExpanded, setBloqueadoExpanded] = useState(false);
   const [bloqueadoFilter, setBloqueadoFilter] = useState<'all' | 'mine' | 'others'>('all');
   const [liquidadoHojeExpanded, setLiquidadoHojeExpanded] = useState(false);
@@ -298,28 +300,53 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
     if (!selectedClient) {
       setUrs([]);
       setProximoCursor(null);
+      setUrAcquirerFilter('all');
+      setUrBrandFilter('all');
       return;
     }
+    let cancelado = false;
     setIsLoadingUrs(true);
-    listAgendaUrs({ ufr: selectedClient.document, limit: 100 })
+    setUrAcquirerFilter('all');
+    setUrBrandFilter('all');
+    const ufr = selectedClient.document.replace(/\D/g, '');
+    listAgendaUrs({ ufr, limit: 100 })
       .then((resposta) => {
+        if (cancelado) return;
         setUrs(resposta.urs.map(mapearUrExibicao));
         setProximoCursor(resposta.proximoCursor);
       })
-      .catch(() => showToast('error', 'Erro ao carregar unidades recebíveis'))
-      .finally(() => setIsLoadingUrs(false));
+      .catch(() => {
+        if (cancelado) return;
+        showToast('error', 'Erro ao carregar unidades recebíveis');
+        setUrs([]);
+        setProximoCursor(null);
+      })
+      .finally(() => {
+        if (!cancelado) setIsLoadingUrs(false);
+      });
+    return () => {
+      cancelado = true;
+    };
   }, [selectedClient]);
 
   function carregarMaisUrs() {
     if (!selectedClient || proximoCursor === null) return;
+    const clienteNaChamada = selectedClient;
+    const ufr = clienteNaChamada.document.replace(/\D/g, '');
     setIsLoadingUrs(true);
-    listAgendaUrs({ ufr: selectedClient.document, cursor: proximoCursor, limit: 100 })
+    listAgendaUrs({ ufr, cursor: proximoCursor, limit: 100 })
       .then((resposta) => {
+        if (selectedClientRef.current !== clienteNaChamada) return;
         setUrs((prev) => [...prev, ...resposta.urs.map(mapearUrExibicao)]);
         setProximoCursor(resposta.proximoCursor);
       })
-      .catch(() => showToast('error', 'Erro ao carregar mais unidades recebíveis'))
-      .finally(() => setIsLoadingUrs(false));
+      .catch(() => {
+        if (selectedClientRef.current !== clienteNaChamada) return;
+        showToast('error', 'Erro ao carregar mais unidades recebíveis');
+      })
+      .finally(() => {
+        if (selectedClientRef.current === clienteNaChamada) setIsLoadingUrs(false);
+      });
   }
 
   const acquirerOptions = useMemo(
