@@ -299,17 +299,28 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
     clienteSessaoRef.current += 1;
     const sessaoAtual = clienteSessaoRef.current;
 
-    if (!selectedClient) {
-      setUrs([]);
-      setProximoCursor(null);
-      setUrAcquirerFilter('all');
-      setUrBrandFilter('all');
-      return;
-    }
-    setIsLoadingUrs(true);
+    // Limpa estado stale incondicionalmente — inclusive ao trocar para um
+    // cliente real — pra não depender de nenhuma invariante de navegação
+    // em outro ponto do arquivo pra evitar mostrar dados do cliente anterior.
+    setUrs([]);
+    setProximoCursor(null);
+    setSelectedUR(null);
     setUrAcquirerFilter('all');
     setUrBrandFilter('all');
+
+    if (!selectedClient) {
+      return;
+    }
+
     const ufr = selectedClient.document.replace(/\D/g, '');
+    if (!ufr) {
+      // Documento vazio/malformado: nunca chamar listAgendaUrs sem ufr, senão
+      // o backend retorna todas as URs visíveis ao financiador do JWT
+      // (exposição de dados cross-cliente).
+      return;
+    }
+
+    setIsLoadingUrs(true);
     listAgendaUrs({ ufr, limit: 100 })
       .then((resposta) => {
         if (sessaoAtual !== clienteSessaoRef.current) return;
@@ -331,6 +342,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
     if (!selectedClient || proximoCursor === null) return;
     const sessaoDaChamada = clienteSessaoRef.current;
     const ufr = selectedClient.document.replace(/\D/g, '');
+    if (!ufr) return;
     setIsLoadingUrs(true);
     listAgendaUrs({ ufr, cursor: proximoCursor, limit: 100 })
       .then((resposta) => {
