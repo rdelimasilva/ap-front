@@ -2,14 +2,14 @@
 set -e
 
 # ============================================
-# Cloud Run Deploy Script - Bradescard/Revvo
+# Cloud Run Deploy Script - ap-front
 # ============================================
 
 # Configuration - override with env vars or edit here
-PROJECT_ID="${GCP_PROJECT:-ideen-revvo-hml-01}"
-SERVICE_NAME="${SERVICE_NAME:-bradescard}"
+PROJECT_ID="${GCP_PROJECT:-registradora-506000}"
+SERVICE_NAME="${SERVICE_NAME:-ap-front}"
 REGION="${REGION:-us-central1}"
-REPOSITORY_NAME="${REPOSITORY_NAME:-bradescard}"
+REPOSITORY_NAME="${REPOSITORY_NAME:-ap-front}"
 IMAGE_NAME="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY_NAME}/${SERVICE_NAME}"
 
 echo "============================================"

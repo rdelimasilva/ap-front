@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Search, Edit2, Trash2, CheckSquare } from 'lucide-react';
+import { Users, Plus, Search, Edit2, Trash2, CheckSquare, X, Save, Loader2 } from 'lucide-react';
 import { NewClientModal } from './NewClientModal';
 import { OptInModule } from './OptInModule';
 import { showToast } from '../hooks/useToast';
-import { listClientes, type ClienteDTO } from '../services/optinApi';
+import { listClientes, updateCliente, OptinApiError, type ClienteDTO } from '../services/optinApi';
 
 interface Partner {
   id: string;
@@ -27,12 +27,142 @@ function clienteDtoParaPartner(dto: ClienteDTO): Partner {
   };
 }
 
+interface EditPartnerModalProps {
+  partner: Partner;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+const EditPartnerModal: React.FC<EditPartnerModalProps> = ({ partner, onClose, onSaved }) => {
+  const [nome, setNome] = useState(partner.name);
+  const [email, setEmail] = useState(partner.email);
+  const [telefone, setTelefone] = useState(partner.phone);
+  const [status, setStatus] = useState<ClienteDTO['status']>(partner.status);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nome.trim()) {
+      setError('Informe o nome do cliente');
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      await updateCliente(partner.id, { nome, email, telefone, status });
+      showToast('success', 'Cliente atualizado!');
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err instanceof OptinApiError ? err.message : 'Erro desconhecido ao atualizar cliente');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+        <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-900">Editar Cliente</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">CNPJ/CPF</label>
+            <input
+              type="text"
+              value={partner.document}
+              disabled
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Nome</label>
+            <input
+              type="text"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Telefone</label>
+            <input
+              type="text"
+              value={telefone}
+              onChange={(e) => setTelefone(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as ClienteDTO['status'])}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="pending">Pendente</option>
+              <option value="active">Ativo</option>
+              <option value="inactive">Inativo</option>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-end space-x-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSaving}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              <span>Salvar</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 export const PartnerRegistrationModule: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'clients' | 'opt-in'>('clients');
   const [isNewPartnerModalOpen, setIsNewPartnerModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [partners, setPartners] = useState<Partner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [editingPartner, setEditingPartner] = useState<Partner | null>(null);
+  const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
 
   const loadPartners = async () => {
     setIsLoading(true);
@@ -59,6 +189,22 @@ export const PartnerRegistrationModule: React.FC = () => {
 
   const handleNewPartner = () => {
     setIsNewPartnerModalOpen(true);
+  };
+
+  const handleDeactivate = async (partner: Partner) => {
+    const confirmado = window.confirm(`Inativar o cliente "${partner.name}"? Ele deixa de aparecer como opção ativa, mas o cadastro é mantido (opt-ins vinculados não são afetados).`);
+    if (!confirmado) return;
+
+    setDeactivatingId(partner.id);
+    try {
+      await updateCliente(partner.id, { status: 'inactive' });
+      showToast('success', 'Cliente inativado');
+      await loadPartners();
+    } catch (err) {
+      showToast('error', err instanceof OptinApiError ? err.message : 'Erro ao inativar cliente');
+    } finally {
+      setDeactivatingId(null);
+    }
   };
 
   return (
@@ -162,11 +308,24 @@ export const PartnerRegistrationModule: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 text-sm text-right">
                           <div className="flex items-center justify-end space-x-2">
-                            <button className="p-1 text-blue-600 hover:bg-blue-50 rounded">
+                            <button
+                              onClick={() => setEditingPartner(partner)}
+                              title="Editar cliente"
+                              className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                            >
                               <Edit2 className="w-4 h-4" />
                             </button>
-                            <button className="p-1 text-red-600 hover:bg-red-50 rounded">
-                              <Trash2 className="w-4 h-4" />
+                            <button
+                              onClick={() => handleDeactivate(partner)}
+                              disabled={deactivatingId === partner.id || partner.status === 'inactive'}
+                              title={partner.status === 'inactive' ? 'Cliente já inativo' : 'Inativar cliente'}
+                              className="p-1 text-red-600 hover:bg-red-50 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {deactivatingId === partner.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
                             </button>
                           </div>
                         </td>
@@ -191,6 +350,13 @@ export const PartnerRegistrationModule: React.FC = () => {
         }}
       />
 
+      {editingPartner && (
+        <EditPartnerModal
+          partner={editingPartner}
+          onClose={() => setEditingPartner(null)}
+          onSaved={loadPartners}
+        />
+      )}
     </div>
   );
 };
