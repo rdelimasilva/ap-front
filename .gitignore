@@ -31,3 +31,6 @@ nul
 
 # Git worktree scratch dirs (isolated feature branches)
 .worktrees/
+
+# subagent-driven-development scratch (ledgers, briefs, review packages)
+.superpowers/
