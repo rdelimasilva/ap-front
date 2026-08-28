@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, UserPlus, Loader2 } from 'lucide-react';
 import { createCliente, OptinApiError } from '../services/optinApi';
-import { CNPJInput } from './MaskedInput';
+import { CPFCNPJInput } from './MaskedInput';
 import { showToast } from '../hooks/useToast';
 
 interface NewClienteOptinModalProps {
@@ -89,7 +89,7 @@ export const NewClienteOptinModal: React.FC<NewClienteOptinModalProps> = ({ isOp
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">CNPJ/CPF</label>
-            <CNPJInput
+            <CPFCNPJInput
               value={documento}
               onChange={(e) => setDocumento(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"

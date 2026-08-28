@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Plus } from 'lucide-react';
-import { CNPJInput } from './MaskedInput';
+import { CPFCNPJInput } from './MaskedInput';
 import { useEscapeKey } from '../hooks/useKeyboardShortcuts';
 import { createCliente, OptinApiError } from '../services/optinApi';
 
@@ -75,41 +75,58 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose,
   };
 
   const validateCNPJ = (cnpj: string): boolean => {
-    const cleaned = cnpj.replace(/\D/g, '');
-    if (cleaned.length !== 14) return false;
-    if (/^(\d)\1{13}$/.test(cleaned)) return false;
+    if (/^(\d)\1{13}$/.test(cnpj)) return false;
 
     const weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
     const weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
 
     let sum = 0;
-    for (let i = 0; i < 12; i++) sum += parseInt(cleaned[i]) * weights1[i];
+    for (let i = 0; i < 12; i++) sum += parseInt(cnpj[i]) * weights1[i];
     let remainder = sum % 11;
     const digit1 = remainder < 2 ? 0 : 11 - remainder;
-    if (parseInt(cleaned[12]) !== digit1) return false;
+    if (parseInt(cnpj[12]) !== digit1) return false;
 
     sum = 0;
-    for (let i = 0; i < 13; i++) sum += parseInt(cleaned[i]) * weights2[i];
+    for (let i = 0; i < 13; i++) sum += parseInt(cnpj[i]) * weights2[i];
     remainder = sum % 11;
     const digit2 = remainder < 2 ? 0 : 11 - remainder;
-    if (parseInt(cleaned[13]) !== digit2) return false;
+    if (parseInt(cnpj[13]) !== digit2) return false;
 
     return true;
+  };
+
+  const validateCPF = (cpf: string): boolean => {
+    if (/^(\d)\1{10}$/.test(cpf)) return false;
+
+    const digito = (base: string, pesos: number[]) => {
+      const soma = base.split('').reduce((acc, d, i) => acc + parseInt(d) * pesos[i], 0);
+      const resto = soma % 11;
+      return resto < 2 ? 0 : 11 - resto;
+    };
+
+    const dv1 = digito(cpf.slice(0, 9), [10, 9, 8, 7, 6, 5, 4, 3, 2]);
+    if (parseInt(cpf[9]) !== dv1) return false;
+    const dv2 = digito(cpf.slice(0, 9) + dv1, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
+    return parseInt(cpf[10]) === dv2;
   };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    cnpjList.forEach((cnpj, index) => {
-      if (!cnpj.trim()) {
-        newErrors[`cnpj-${index}`] = 'CNPJ é obrigatório';
-      } else {
-        const cleanDoc = cnpj.replace(/\D/g, '');
-        if (cleanDoc.length !== 14) {
-          newErrors[`cnpj-${index}`] = 'CNPJ deve ter 14 dígitos';
-        } else if (!validateCNPJ(cleanDoc)) {
+    cnpjList.forEach((documento, index) => {
+      const cleanDoc = documento.replace(/\D/g, '');
+      if (!cleanDoc) {
+        newErrors[`cnpj-${index}`] = 'CPF/CNPJ é obrigatório';
+      } else if (cleanDoc.length === 11) {
+        if (!validateCPF(cleanDoc)) {
+          newErrors[`cnpj-${index}`] = 'CPF inválido. Verifique os dígitos informados.';
+        }
+      } else if (cleanDoc.length === 14) {
+        if (!validateCNPJ(cleanDoc)) {
           newErrors[`cnpj-${index}`] = 'CNPJ inválido. Verifique os dígitos informados.';
         }
+      } else {
+        newErrors[`cnpj-${index}`] = 'CPF deve ter 11 dígitos ou CNPJ 14 dígitos';
       }
     });
 
@@ -162,7 +179,7 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose,
         indiceFalha = i;
         const mensagem = err instanceof OptinApiError ? err.message : 'Erro desconhecido ao cadastrar cliente';
         setErrors(prev => ({ ...prev, [`cnpj-${i}`]: mensagem }));
-        setSubmitError(`Falha ao cadastrar CNPJ ${i + 1}: ${mensagem}`);
+        setSubmitError(`Falha ao cadastrar CPF/CNPJ ${i + 1}: ${mensagem}`);
         break;
       }
     }
@@ -226,14 +243,14 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose,
               <div key={index} className="flex items-start space-x-2">
                 <div className="flex-1">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    CNPJ {index + 1} <span className="text-red-500">*</span>
+                    CPF/CNPJ {index + 1} <span className="text-red-500">*</span>
                   </label>
-                  <CNPJInput
+                  <CPFCNPJInput
                     value={cnpj}
                     onChange={(e) => {
                       handleCnpjChange(index, e.target.value);
                     }}
-                    placeholder="00.000.000/0000-00"
+                    placeholder="CPF ou CNPJ"
                     className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                       errors[`cnpj-${index}`] ? 'border-red-500' : 'border-gray-300'
                     }`}
@@ -278,7 +295,7 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose,
               className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 transition-colors"
             >
               <Plus className="w-4 h-4" />
-              <span className="text-sm font-medium">Adicionar outro CNPJ</span>
+              <span className="text-sm font-medium">Adicionar outro CPF/CNPJ</span>
             </button>
           </div>
 
