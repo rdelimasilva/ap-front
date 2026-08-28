@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, FileText, Send, Loader2, Search, Plus, ChevronRight } from 'lucide-react';
 import { NewClienteOptinModal } from './NewClienteOptinModal';
+import { CNPJInput } from './MaskedInput';
 import { showToast } from '../hooks/useToast';
 import { createOptin, listClientes, OptinApiError, type ClienteDTO } from '../services/optinApi';
 import { CREDENCIADORAS_CERC } from '../data/credenciadorasCerc';
@@ -15,12 +16,14 @@ interface NewOptInModalProps {
 // da unidade recebível (CERC-AP004). "99T" no envio real significa "todas" — ver handleSubmit.
 
 // Domínio oficial de arranjos de pagamento da CERC (arranjos_pagamento_cerc.xlsx, 2026-08-28).
+// ACD (Amex Débito) removido: confirmado com a CERC real (homolog) em 2026-08-28 que
+// esse código é rejeitado (104016 ARRANJO DE PAGAMENTO INVALIDO) neste ambiente/tenant,
+// apesar de constar na planilha oficial — os outros 46 foram validados individualmente.
 const ARRANJOS_PAGAMENTO: { codigo: string; descricao: string }[] = [
   { codigo: 'BCD', descricao: 'Banescard Cartão de Débito' },
   { codigo: 'HCD', descricao: 'Hiper Débito' },
   { codigo: 'NUD', descricao: 'NuPay Débito' },
   { codigo: 'VCD', descricao: 'Visa Cartão de Débito' },
-  { codigo: 'ACD', descricao: 'Amex Débito' },
   { codigo: 'CBD', descricao: 'Cabal Débito' },
   { codigo: 'SCD', descricao: 'Sorocred Cartão de Débito' },
   { codigo: 'ECD', descricao: 'Elo Cartão de Débito' },
@@ -80,6 +83,19 @@ const ARRANJOS_POR_CATEGORIA = CATEGORIAS_ARRANJO.map(categoria => ({
   itens: ARRANJOS_PAGAMENTO.filter(a => categoriaArranjo(a.descricao) === categoria),
 })).filter(grupo => grupo.itens.length > 0);
 
+function cnpjValido(cnpj: string): boolean {
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+  const digito = (base: string, pesos: number[]) =>
+    (() => {
+      const resto = base.split('').reduce((acc, d, i) => acc + parseInt(d) * pesos[i], 0) % 11;
+      return resto < 2 ? 0 : 11 - resto;
+    })();
+  const dv1 = digito(cnpj.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  if (parseInt(cnpj[12]) !== dv1) return false;
+  const dv2 = digito(cnpj.slice(0, 12) + dv1, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  return parseInt(cnpj[13]) === dv2;
+}
+
 export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [step, setStep] = useState<'select-client' | 'opt-in-details'>('select-client');
   const [selectedClient, setSelectedClient] = useState<ClienteDTO | null>(null);
@@ -98,6 +114,8 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
   const [todasCredenciadoras, setTodasCredenciadoras] = useState(true);
   const [credenciadorasSelecionadas, setCredenciadorasSelecionadas] = useState<string[]>([]);
   const [buscaCredenciadora, setBuscaCredenciadora] = useState('');
+  const [cnpjManual, setCnpjManual] = useState('');
+  const [erroCnpjManual, setErroCnpjManual] = useState<string | null>(null);
   const [todosArranjos, setTodosArranjos] = useState(true);
   const [arranjosSelecionados, setArranjosSelecionados] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -148,6 +166,21 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
     setCredenciadorasSelecionadas(prev =>
       prev.includes(acquirer) ? prev.filter(a => a !== acquirer) : [...prev, acquirer]
     );
+  };
+
+  const adicionarCredenciadoraManual = () => {
+    const digitos = cnpjManual.replace(/\D/g, '');
+    if (!cnpjValido(digitos)) {
+      setErroCnpjManual('CNPJ inválido. Verifique os dígitos informados.');
+      return;
+    }
+    if (credenciadorasSelecionadas.includes(digitos)) {
+      setErroCnpjManual('Esse CNPJ já está selecionado.');
+      return;
+    }
+    setCredenciadorasSelecionadas(prev => [...prev, digitos]);
+    setCnpjManual('');
+    setErroCnpjManual(null);
   };
 
   const toggleArranjo = (arranjo: string) => {
@@ -210,6 +243,8 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
       });
       setTodasCredenciadoras(true);
       setCredenciadorasSelecionadas([]);
+      setCnpjManual('');
+      setErroCnpjManual(null);
       setTodosArranjos(true);
       setArranjosSelecionados([]);
       setStep('select-client');
@@ -238,6 +273,10 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
     return c.nome.toLowerCase().includes(buscaCredenciadora.toLowerCase()) ||
       (digitos.length > 0 && c.cnpj.includes(digitos));
   });
+
+  const credenciadorasManuaisSelecionadas = credenciadorasSelecionadas.filter(
+    cnpj => !CREDENCIADORAS_CERC.some(c => c.cnpj === cnpj)
+  );
 
   return (
     <>
@@ -450,6 +489,39 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                         <div className="flex items-center justify-between mb-2">
                           {credenciadorasSelecionadas.length > 0 && (
                             <p className="text-xs text-gray-500">{credenciadorasSelecionadas.length} selecionada(s)</p>
+                          )}
+                        </div>
+                        <div className="mb-3 p-2.5 bg-gray-50 border border-gray-200 rounded-lg">
+                          <p className="text-xs font-medium text-gray-600 mb-1.5">Não achou na lista? Adicione pelo CNPJ:</p>
+                          <div className="flex items-start space-x-2">
+                            <div className="flex-1">
+                              <CNPJInput
+                                value={cnpjManual}
+                                onChange={(e) => { setCnpjManual(e.target.value); setErroCnpjManual(null); }}
+                                placeholder="00.000.000/0000-00"
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                              {erroCnpjManual && <p className="text-xs text-red-600 mt-1">{erroCnpjManual}</p>}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={adicionarCredenciadoraManual}
+                              className="px-3 py-1.5 bg-gray-700 text-white rounded-lg text-sm hover:bg-gray-800 transition-colors whitespace-nowrap"
+                            >
+                              Adicionar
+                            </button>
+                          </div>
+                          {credenciadorasManuaisSelecionadas.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {credenciadorasManuaisSelecionadas.map(cnpj => (
+                                <span key={cnpj} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded-full">
+                                  {cnpj}
+                                  <button type="button" onClick={() => toggleCredenciadora(cnpj)} className="hover:text-blue-900">
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
                           )}
                         </div>
                         <div className="relative mb-2">
