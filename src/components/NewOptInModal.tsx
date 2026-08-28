@@ -1,29 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { X, FileText, Send, Loader2, Search, Plus, Upload, ChevronRight } from 'lucide-react';
-import { NewClientModal } from './NewClientModal';
-import { ImportClientsModal } from './ImportClientsModal';
+import { X, FileText, Send, Loader2, Search, Plus, ChevronRight } from 'lucide-react';
+import { NewClienteOptinModal } from './NewClienteOptinModal';
 import { showToast } from '../hooks/useToast';
+import { createOptin, listClientes, OptinApiError, type ClienteDTO } from '../services/optinApi';
 
 interface NewOptInModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-}
-
-interface Client {
-  id: string;
-  name: string;
-  document: string;
-  email: string;
-  phone: string;
-  address: string;
-}
-
-interface NewClientPayload {
-  document: string;
-  email?: string;
-  phone?: string;
-  address?: string;
 }
 
 // Credenciadoras e arranjos de pagamento disponíveis para a definição da unidade recebível (CERC-AP004).
@@ -33,20 +17,18 @@ const ARRANJOS_PAGAMENTO = ['VISA', 'MASTERCARD', 'ELO', 'HIPERCARD'];
 
 export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [step, setStep] = useState<'select-client' | 'opt-in-details'>('select-client');
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [clients, setClients] = useState<Client[]>([]);
+  const [selectedClient, setSelectedClient] = useState<ClienteDTO | null>(null);
+  const [clients, setClients] = useState<ClienteDTO[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoadingClients, setIsLoadingClients] = useState(false);
-  const [showNewClientModal, setShowNewClientModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
+  const [showNewClienteModal, setShowNewClienteModal] = useState(false);
   const [formData, setFormData] = useState({
-    expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    tipoOperacao: 'C' as 'C' | 'A',
-    referenciaExterna: `OPTIN-${Date.now()}`,
-    dataAssinaturaOptIn: new Date().toISOString().split('T')[0],
-    dataInicioVigencia: new Date().toISOString().split('T')[0],
+    vigenciaFim: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    dataAssinatura: new Date().toISOString().split('T')[0],
+    vigenciaInicio: new Date().toISOString().split('T')[0],
     carteira: '',
     documentoTitular: '',
+    evidenciaAutorizacaoId: '',
   });
   const [todasCredenciadoras, setTodasCredenciadoras] = useState(true);
   const [credenciadorasSelecionadas, setCredenciadorasSelecionadas] = useState<string[]>([]);
@@ -64,72 +46,22 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
   const loadClients = async () => {
     setIsLoadingClients(true);
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-      const response = await fetch(`${supabaseUrl}/rest/v1/clients?select=*&order=created_at.desc`, {
-        method: 'GET',
-        headers: {
-          'apikey': supabaseAnonKey,
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setClients(data);
-      }
+      const dados = await listClientes();
+      setClients(dados);
     } catch (err) {
       console.error('Error loading clients:', err);
+      showToast('error', 'Erro ao carregar clientes');
     } finally {
       setIsLoadingClients(false);
     }
   };
 
-  const handleSaveNewClient = async (clientData: NewClientPayload | NewClientPayload[]) => {
-    try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-      const clientsToCreate = Array.isArray(clientData) ? clientData : [clientData];
-
-      for (const client of clientsToCreate) {
-        const response = await fetch(`${supabaseUrl}/rest/v1/clients`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': supabaseAnonKey,
-            'Authorization': `Bearer ${supabaseAnonKey}`,
-            'Prefer': 'return=representation'
-          },
-          body: JSON.stringify({
-            name: client.document,
-            document: client.document,
-            email: client.email || '',
-            phone: client.phone || '',
-            address: client.address || ''
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error('Erro ao criar cliente');
-        }
-      }
-
-      await loadClients();
-      setShowNewClientModal(false);
-    } catch (err) {
-      console.error('Error creating client:', err);
-      showToast('error', 'Erro ao criar cliente');
-    }
+  const handleClienteCriado = () => {
+    loadClients();
+    setShowNewClienteModal(false);
   };
 
-  const handleImportClients = async (importedClients: NewClientPayload[]) => {
-    await handleSaveNewClient(importedClients);
-    setShowImportModal(false);
-  };
-
-  const handleSelectClient = (client: Client) => {
+  const handleSelectClient = (client: ClienteDTO) => {
     setSelectedClient(client);
     setStep('opt-in-details');
   };
@@ -141,7 +73,7 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
 
   if (!isOpen) return null;
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -176,75 +108,39 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
       return;
     }
 
+    if (!formData.evidenciaAutorizacaoId.trim()) {
+      setError('Informe o ID da evidência de autorização');
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const credenciadoras = todasCredenciadoras ? ['99T'] : credenciadorasSelecionadas;
+      const arranjos = todosArranjos ? ['99T'] : arranjosSelecionados;
 
-      // cnpjSolicitante/cnpjFinanciador vêm do CNPJ já cadastrado do cliente (Cadastro).
-      const cnpjSolicitante = selectedClient.document;
-      const cnpjFinanciador = selectedClient.document;
-
-      const listaCnpjCredenciadora = todasCredenciadoras ? ['99T'] : credenciadorasSelecionadas;
-      const listaCodigoArranjoPagamento = todosArranjos ? ['99T'] : arranjosSelecionados;
-
-      const response = await fetch(`${supabaseUrl}/rest/v1/opt_in_requests`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseAnonKey,
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-          'Prefer': 'return=representation'
-        },
-        body: JSON.stringify({
-          client_name: selectedClient.name,
-          client_document: selectedClient.document,
-          client_email: selectedClient.email,
-          client_phone: selectedClient.phone,
-          client_address: selectedClient.address,
-          expiry_date: new Date(formData.expiryDate).toISOString(),
-          status: 'pending_signature',
-          // Campos exigidos pelo contrato CERC-AP004 (POST /opt_in)
-          tipo_operacao: formData.tipoOperacao,
-          referencia_externa: formData.referenciaExterna,
-          cnpj_solicitante: cnpjSolicitante,
-          cnpj_financiador: cnpjFinanciador,
-          data_assinatura_opt_in: new Date(formData.dataAssinaturaOptIn).toISOString(),
-          carteira: formData.carteira || null,
-          documento_titular: formData.documentoTitular || null,
-          definicao_unidade_recebivel: {
-            listaCnpjCredenciadora,
-            listaCodigoArranjoPagamento,
-            dataInicio: new Date(formData.dataInicioVigencia).toISOString(),
-            dataFim: new Date(formData.expiryDate).toISOString(),
-            documentoUsuarioFinalRecebedor: selectedClient.document,
-            documentoTitular: formData.documentoTitular || undefined,
-          },
-        })
+      const optin = await createOptin({
+        clienteId: selectedClient.id,
+        titular: formData.documentoTitular || undefined,
+        dataAssinatura: formData.dataAssinatura,
+        vigenciaInicio: formData.vigenciaInicio,
+        vigenciaFim: formData.vigenciaFim,
+        carteira: formData.carteira || null,
+        evidenciaAutorizacaoId: formData.evidenciaAutorizacaoId,
+        credenciadoras,
+        arranjos,
       });
 
-      if (!response.ok) {
-        throw new Error('Erro ao criar opt-in');
-      }
-
-      const [createdOptIn] = await response.json();
-
-      const signatureUrl = `${window.location.origin}/optin-signature/${createdOptIn.signature_token}`;
-
-      await navigator.clipboard.writeText(signatureUrl);
-
-      showToast('success', 'Opt-in criado com sucesso!', 'Link de assinatura copiado para a área de transferência.');
+      showToast('success', 'Opt-in criado com sucesso!', `Protocolo CERC: ${optin.protocoloCerc}`);
 
       setFormData({
-        expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        tipoOperacao: 'C',
-        referenciaExterna: `OPTIN-${Date.now()}`,
-        dataAssinaturaOptIn: new Date().toISOString().split('T')[0],
-        dataInicioVigencia: new Date().toISOString().split('T')[0],
+        vigenciaFim: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        dataAssinatura: new Date().toISOString().split('T')[0],
+        vigenciaInicio: new Date().toISOString().split('T')[0],
         carteira: '',
         documentoTitular: '',
+        evidenciaAutorizacaoId: '',
       });
       setTodasCredenciadoras(true);
       setCredenciadorasSelecionadas([]);
@@ -256,15 +152,19 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
       onSuccess();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      if (err instanceof OptinApiError) {
+        setError(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const filteredClients = clients.filter(client =>
-    client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.document.includes(searchTerm)
+    client.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    client.documento.includes(searchTerm)
   );
 
   return (
@@ -283,10 +183,7 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                 </p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
-            >
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
               <X className="w-6 h-6" />
             </button>
           </div>
@@ -306,19 +203,11 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowNewClientModal(true)}
+                  onClick={() => setShowNewClienteModal(true)}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 whitespace-nowrap"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Novo Cliente</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowImportModal(true)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 whitespace-nowrap"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Importar</span>
                 </button>
               </div>
 
@@ -330,24 +219,14 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                 <div className="text-center py-12">
                   <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-500 mb-4">Nenhum cliente encontrado</p>
-                  <div className="flex items-center justify-center space-x-3">
-                    <button
-                      type="button"
-                      onClick={() => setShowNewClientModal(true)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Cadastrar Cliente</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowImportModal(true)}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
-                    >
-                      <Upload className="w-4 h-4" />
-                      <span>Importar Clientes</span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewClienteModal(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 mx-auto"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Cadastrar Cliente</span>
+                  </button>
                 </div>
               ) : (
                 <div className="max-h-96 overflow-y-auto space-y-2">
@@ -360,8 +239,8 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                     >
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium text-gray-900">{client.name}</div>
-                          <div className="text-sm text-gray-500">{client.document}</div>
+                          <div className="font-medium text-gray-900">{client.nome}</div>
+                          <div className="text-sm text-gray-500">{client.documento}</div>
                           {client.email && (
                             <div className="text-xs text-gray-400">{client.email}</div>
                           )}
@@ -385,28 +264,14 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                 <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-medium text-gray-700">Cliente Selecionado</h3>
-                    <button
-                      type="button"
-                      onClick={handleBack}
-                      className="text-sm text-blue-600 hover:text-blue-700"
-                    >
+                    <button type="button" onClick={handleBack} className="text-sm text-blue-600 hover:text-blue-700">
                       Alterar
                     </button>
                   </div>
                   <div className="text-sm">
-                    <div className="font-medium text-gray-900">{selectedClient.name}</div>
-                    <div className="text-gray-600">{selectedClient.document}</div>
+                    <div className="font-medium text-gray-900">{selectedClient.nome}</div>
+                    <div className="text-gray-600">{selectedClient.documento}</div>
                     {selectedClient.email && <div className="text-gray-500">{selectedClient.email}</div>}
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-2 gap-2 text-xs text-gray-500">
-                    <div>
-                      <span className="block text-gray-400">CNPJ Solicitante</span>
-                      <span className="text-gray-700">{selectedClient.document}</span>
-                    </div>
-                    <div>
-                      <span className="block text-gray-400">CNPJ Financiador</span>
-                      <span className="text-gray-700">{selectedClient.document}</span>
-                    </div>
                   </div>
                 </div>
               )}
@@ -415,39 +280,12 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Tipo de Operação
-                    </label>
-                    <select
-                      name="tipoOperacao"
-                      value={formData.tipoOperacao}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="C">Criação</option>
-                      <option value="A">Alteração</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Referência Externa
-                    </label>
-                    <input
-                      type="text"
-                      name="referenciaExterna"
-                      value={formData.referenciaExterna}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       Data de Assinatura do Opt-In
                     </label>
                     <input
                       type="date"
-                      name="dataAssinaturaOptIn"
-                      value={formData.dataAssinaturaOptIn}
+                      name="dataAssinatura"
+                      value={formData.dataAssinatura}
                       onChange={handleInputChange}
                       required
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -478,6 +316,20 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      ID da Evidência de Autorização
+                    </label>
+                    <input
+                      type="text"
+                      name="evidenciaAutorizacaoId"
+                      value={formData.evidenciaAutorizacaoId}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="Ex.: número do protocolo interno"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
                 </div>
 
                 <div className="border-t border-gray-200 pt-4">
@@ -489,8 +341,8 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                       </label>
                       <input
                         type="date"
-                        name="dataInicioVigencia"
-                        value={formData.dataInicioVigencia}
+                        name="vigenciaInicio"
+                        value={formData.vigenciaInicio}
                         onChange={handleInputChange}
                         required
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -502,8 +354,8 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                       </label>
                       <input
                         type="date"
-                        name="expiryDate"
-                        value={formData.expiryDate}
+                        name="vigenciaFim"
+                        value={formData.vigenciaFim}
                         onChange={handleInputChange}
                         required
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -589,8 +441,8 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                       Como funciona?
                     </h4>
                     <p className="text-sm text-blue-700">
-                      Ao criar o opt-in, um link exclusivo de assinatura será gerado.
-                      Envie este link para o cliente assinar o termo de consentimento digitalmente.
+                      Ao criar o opt-in, o registro é enviado imediatamente para a CERC. O resultado
+                      (ativo ou rejeitado) aparece na tela em seguida.
                     </p>
                   </div>
                 </div>
@@ -628,16 +480,10 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
         </div>
       </div>
 
-      <NewClientModal
-        isOpen={showNewClientModal}
-        onClose={() => setShowNewClientModal(false)}
-        onSave={handleSaveNewClient}
-      />
-
-      <ImportClientsModal
-        isOpen={showImportModal}
-        onClose={() => setShowImportModal(false)}
-        onImport={handleImportClients}
+      <NewClienteOptinModal
+        isOpen={showNewClienteModal}
+        onClose={() => setShowNewClienteModal(false)}
+        onCreated={handleClienteCriado}
       />
     </>
   );

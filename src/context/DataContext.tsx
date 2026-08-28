@@ -7,9 +7,26 @@ import { loadDataFromCsv } from '../data/csvLoader';
 import {
   mockReceivables,
   mockContracts,
-  mockClients,
 } from '../data/mockData';
 import { mockContaCorrenteEntries } from '../data/contaCorrenteMockData';
+import { listClientes, updateCliente, type ClienteDTO } from '../services/optinApi';
+
+function clienteDtoParaClient(dto: ClienteDTO): Client {
+  return {
+    id: dto.id,
+    name: dto.nome,
+    document: dto.documento,
+    email: dto.email ?? '',
+    phone: dto.telefone ?? '',
+    status: dto.status,
+    totalLimit: 0,
+    usedLimit: 0,
+    availableLimit: 0,
+    collateralValue: 0,
+    createdAt: new Date(dto.criadoEm),
+    updatedAt: new Date(dto.atualizadoEm),
+  };
+}
 export interface DataContextValue {
   receivables: Receivable[];
   contracts: Contract[];
@@ -20,7 +37,7 @@ export interface DataContextValue {
   error: string | null;
   useCsv: boolean;
   retry: () => void;
-  updateClient: (clientId: string, data: Partial<Client>) => void;
+  updateClient: (clientId: string, data: Partial<Client>) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -39,7 +56,7 @@ function normalizeContracts(contracts: Contract[]): Contract[] {
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [receivables, setReceivables] = useState<Receivable[]>(mockReceivables);
   const [contracts, setContracts] = useState<Contract[]>(normalizeContracts(mockContracts));
-  const [clients, setClients] = useState<Client[]>(mockClients);
+  const [clients, setClients] = useState<Client[]>([]);
   const [contaCorrenteEntries, setContaCorrenteEntries] = useState<ContaCorrenteEntry[]>(mockContaCorrenteEntries);
   const [liquidationProblems, setLiquidationProblems] = useState<LiquidationProblemUr[]>(mockLiquidationProblems);
   const [isLoading, setIsLoading] = useState(true);
@@ -50,19 +67,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await loadDataFromCsv();
+      const [data, clientesApi] = await Promise.all([
+        loadDataFromCsv(),
+        listClientes(),
+      ]);
       setReceivables(data.receivables);
       setContracts(normalizeContracts(data.contracts));
-      setClients(data.clients);
+      setClients(clientesApi.map(clienteDtoParaClient));
       setContaCorrenteEntries(data.contaCorrenteEntries);
       setLiquidationProblems(data.liquidationProblems);
       setUseCsv(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro ao carregar CSV');
+      setError(e instanceof Error ? e.message : 'Erro ao carregar dados');
       setUseCsv(false);
       setReceivables(mockReceivables);
       setContracts(normalizeContracts(mockContracts));
-      setClients(mockClients);
+      try {
+        setClients((await listClientes()).map(clienteDtoParaClient));
+      } catch {
+        setClients([]);
+      }
       setContaCorrenteEntries(mockContaCorrenteEntries);
       setLiquidationProblems([]);
     } finally {
@@ -74,8 +98,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     load();
   }, [load]);
 
-  const updateClient = useCallback((clientId: string, data: Partial<Client>) => {
-    setClients(prev => prev.map(c => c.id === clientId ? { ...c, ...data, updatedAt: new Date() } : c));
+  const updateClient = useCallback(async (clientId: string, data: Partial<Client>) => {
+    const payloadCadastro: { nome?: string; email?: string; telefone?: string; status?: string } = {};
+    if (data.name !== undefined) payloadCadastro.nome = data.name;
+    if (data.email !== undefined) payloadCadastro.email = data.email;
+    if (data.phone !== undefined) payloadCadastro.telefone = data.phone;
+    if (data.status !== undefined) payloadCadastro.status = data.status;
+
+    let atualizadoViaApi: Partial<Client> = {};
+    if (Object.keys(payloadCadastro).length > 0) {
+      const dto = await updateCliente(clientId, payloadCadastro);
+      atualizadoViaApi = {
+        name: dto.nome,
+        email: dto.email ?? '',
+        phone: dto.telefone ?? '',
+        status: dto.status,
+      };
+    }
+
+    setClients(prev => prev.map(c => {
+      if (c.id !== clientId) return c;
+      return { ...c, ...atualizadoViaApi, ...data, updatedAt: new Date() };
+    }));
   }, []);
 
   const value: DataContextValue = {

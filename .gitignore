@@ -29,4 +29,5 @@ nul
 .npm-cache
 .claude/settings.local.json
 
+# Git worktree scratch dirs (isolated feature branches)
 .worktrees/
