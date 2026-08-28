@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { TrendingUp, Lock, CheckCircle, Calendar, ArrowLeft, Eye, FileText, Plus, Filter, Search, Activity, ChevronDown, ChevronRight, CreditCard, Shield, DollarSign, RefreshCw, Zap, ArrowRight, X, ArrowUpDown, ArrowUp, ArrowDown, Clock } from 'lucide-react';
 import { Client } from '../types';
 import { NewOptInModal } from './NewOptInModal';
@@ -11,6 +11,9 @@ import { OwnershipTransferJourney } from './OwnershipTransferJourney';
 import { PreContractedAntecipationJourney } from './PreContractedAntecipationJourney';
 import { Tooltip } from './Tooltip';
 import { showToast } from '../hooks/useToast';
+import { listAgendaUrs, type AgendaUrDTO } from '../services/agendaApi';
+import { ARRANJOS_CERC } from '../data/arranjosCerc';
+import { CREDENCIADORAS_CERC } from '../data/credenciadorasCerc';
 
 interface ScheduleViewProps {
   clients: Client[];
@@ -37,16 +40,13 @@ interface URPaymentInfo {
   tipoInformacaoPagamento: string;
 }
 
-interface ClientUR {
+interface UrExibicao {
   id: string;
-  acquirer: string;
-  brand: string;
-  type: 'credito' | 'debito';
+  credenciadora: string;
+  arranjoDescricao: string;
   settlementDate: string;
   value: number;
   status: 'bloqueado' | 'disponivel' | 'liquidado';
-  // Campos adicionais do AP005
-  referenciaExterna: string;
   entidadeRegistradora: string;
   cnpjCredenciadora: string;
   documentoUsuarioFinalRecebedor: string;
@@ -59,87 +59,67 @@ interface ClientUR {
   valorTotalUR: number;
   carteira?: string;
   dataHoraUltimaAtualizacao: string;
-  listaInformacoesPagamento: URPaymentInfo[];
 }
 
-const UR_ACQUIRERS = ['Cielo', 'Rede', 'Stone', 'GetNet'];
-const UR_BRANDS = ['Visa', 'Mastercard', 'Elo', 'Amex', 'Hipercard'];
-const UR_ACQUIRER_CNPJS: Record<string, string> = {
-  Cielo: '01.027.058/0001-91',
-  Rede: '01.425.787/0001-04',
-  Stone: '16.501.555/0001-57',
-  GetNet: '10.573.521/0001-91',
-};
-const TIPOS_INFORMACAO_PAGAMENTO = [
-  '1 - Transferência de titularidade',
-  '2 - Gravame',
-  '3 - Bloqueio judicial',
-  '4 - Antecipação pós-contratação',
-  '5 - Liquidação',
-  '6 - Domicílio de pagamento',
-  '7 - Promessa de cessão',
-];
+const CREDENCIADORA_POR_CNPJ = new Map(CREDENCIADORAS_CERC.map((c) => [c.cnpj, c.nome]));
+const ARRANJO_POR_CODIGO = new Map(ARRANJOS_CERC.map((a) => [a.codigo, a.descricao]));
 
-const generateClientURs = (clientId: string, clientDocument: string): ClientUR[] => {
-  const statuses: ClientUR['status'][] = ['bloqueado', 'disponivel', 'liquidado'];
-  const baseDate = new Date('2025-11-10');
-  const urs: ClientUR[] = [];
+function nomeCredenciadora(cnpj: string): string {
+  const digitos = cnpj.replace(/\D/g, '');
+  return CREDENCIADORA_POR_CNPJ.get(digitos) ?? cnpj;
+}
 
-  for (let i = 0; i < 32; i++) {
-    const settlementDate = new Date(baseDate);
-    settlementDate.setDate(baseDate.getDate() + (i * 3 - 45));
+function descricaoArranjo(codigo: string): string {
+  return ARRANJO_POR_CODIGO.get(codigo) ?? codigo;
+}
 
-    const status = statuses[i % statuses.length];
-    const acquirer = UR_ACQUIRERS[i % UR_ACQUIRERS.length];
-    const value = Math.round(2500 + Math.random() * 15000);
+// Aproximação — não há dado exato de liquidação efetiva disponível (mora em
+// agenda_ur_pagamento, nenhum endpoint do backend expõe essa tabela ainda).
+function statusDerivado(ur: AgendaUrDTO): UrExibicao['status'] {
+  if (Number(ur.valorBloqueado) > 0) return 'bloqueado';
+  if (Number(ur.valorLivre) > 0) return 'disponivel';
+  return 'liquidado';
+}
 
-    const valorBloqueado = status === 'bloqueado' ? value : 0;
-    const valorLivre = status === 'disponivel' ? value : 0;
-    const valorConstituidoAntecipacaoPreContratado = i % 5 === 0 ? Math.round(value * 0.2) : 0;
-    const valorConstituidoTotal = value + valorConstituidoAntecipacaoPreContratado;
+function mapearUrExibicao(ur: AgendaUrDTO): UrExibicao {
+  return {
+    id: `${ur.dataLiquidacao}-${ur.entidadeRegistradora}-${ur.cnpjCredenciadora}-${ur.documentoUfr}-${ur.documentoTitular}-${ur.codigoArranjo}`,
+    credenciadora: nomeCredenciadora(ur.cnpjCredenciadora),
+    arranjoDescricao: descricaoArranjo(ur.codigoArranjo),
+    settlementDate: ur.dataLiquidacao,
+    value: Number(ur.valorTotalUR),
+    status: statusDerivado(ur),
+    entidadeRegistradora: ur.entidadeRegistradora,
+    cnpjCredenciadora: ur.cnpjCredenciadora,
+    documentoUsuarioFinalRecebedor: ur.documentoUfr,
+    titularUR: ur.documentoTitular,
+    constituicao: ur.constituicao,
+    valorConstituidoTotal: Number(ur.valorConstituidoTotal),
+    valorConstituidoAntecipacaoPreContratado: Number(ur.valorConstituidoAntecipacaoPre),
+    valorBloqueado: Number(ur.valorBloqueado),
+    valorLivre: Number(ur.valorLivre),
+    valorTotalUR: Number(ur.valorTotalUR),
+    carteira: ur.carteira ?? undefined,
+    dataHoraUltimaAtualizacao: ur.dataHoraUltimaAtualizacao,
+  };
+}
 
-    const lastUpdate = new Date(settlementDate);
-    lastUpdate.setDate(lastUpdate.getDate() - 1);
-
-    const paymentInfo: URPaymentInfo = {
-      numeroDocumentoTitularDomicilio: clientDocument,
-      tipoConta: i % 4 === 0 ? 'PG' : 'CC',
-      ispb: String(10000000 + i * 137).padStart(8, '0'),
-      agencia: i % 4 === 0 ? undefined : String(1000 + i).padStart(4, '0'),
-      numeroConta: `${100000 + i}-${i % 10}`,
-      valorAPagar: value,
-      dataLiquidacaoEfetiva: status === 'liquidado' ? settlementDate.toISOString().split('T')[0] : undefined,
-      valorLiquidacaoEfetiva: status === 'liquidado' ? value : undefined,
-      tipoInformacaoPagamento: TIPOS_INFORMACAO_PAGAMENTO[status === 'liquidado' ? 4 : i % TIPOS_INFORMACAO_PAGAMENTO.length],
-    };
-
-    urs.push({
-      id: `${clientId}-ur-${i}`,
-      acquirer,
-      brand: UR_BRANDS[(i * 2) % UR_BRANDS.length],
-      type: i % 3 === 0 ? 'debito' : 'credito',
-      settlementDate: settlementDate.toISOString().split('T')[0],
-      value,
-      status,
-      referenciaExterna: `REF-${clientId.slice(0, 6).toUpperCase()}-${1000 + i}`,
-      entidadeRegistradora: '22.246.686/0001-96', // CERC
-      cnpjCredenciadora: UR_ACQUIRER_CNPJS[acquirer],
-      documentoUsuarioFinalRecebedor: clientDocument,
-      titularUR: clientDocument,
-      constituicao: i % 6 === 0 ? '2' : '1',
-      valorConstituidoTotal,
-      valorConstituidoAntecipacaoPreContratado,
-      valorBloqueado,
-      valorLivre,
-      valorTotalUR: valorConstituidoTotal,
-      carteira: i % 7 === 0 ? `CART-${100 + i}` : undefined,
-      dataHoraUltimaAtualizacao: lastUpdate.toISOString(),
-      listaInformacoesPagamento: [paymentInfo],
-    });
-  }
-
-  return urs;
-};
+// MOCKADO — agenda_ur_pagamento não é exposto por nenhum endpoint do
+// backend ainda (design doc §2.1bis do plano de integração). Gera uma
+// única linha de "informação de pagamento" fabricada a partir de dados
+// reais da UR, só pra a seção do modal não ficar vazia.
+function gerarInformacaoPagamentoMock(ur: UrExibicao): URPaymentInfo[] {
+  return [{
+    numeroDocumentoTitularDomicilio: ur.titularUR,
+    tipoConta: 'CC',
+    ispb: '00000000',
+    numeroConta: '—',
+    valorAPagar: ur.valorTotalUR,
+    dataLiquidacaoEfetiva: ur.status === 'liquidado' ? ur.settlementDate : undefined,
+    valorLiquidacaoEfetiva: ur.status === 'liquidado' ? ur.valorTotalUR : undefined,
+    tipoInformacaoPagamento: 'Mockado — endpoint agenda_ur_pagamento não disponível',
+  }];
+}
 
 interface URMutationEvent {
   date: string;
@@ -147,7 +127,7 @@ interface URMutationEvent {
   description: string;
 }
 
-const generateURMutationEvents = (ur: ClientUR, formatCurrency: (value: number) => string): URMutationEvent[] => {
+const generateURMutationEvents = (ur: UrExibicao, formatCurrency: (value: number) => string): URMutationEvent[] => {
   const settlement = new Date(ur.settlementDate);
   const captureDate = new Date(settlement);
   captureDate.setDate(captureDate.getDate() - 2);
@@ -156,7 +136,7 @@ const generateURMutationEvents = (ur: ClientUR, formatCurrency: (value: number) 
     {
       date: captureDate.toISOString().split('T')[0],
       title: 'Captura da UR',
-      description: `Transação capturada via ${ur.acquirer} (${ur.brand}) no valor de ${formatCurrency(ur.value)}`,
+      description: `Transação capturada via ${ur.credenciadora} (${ur.arranjoDescricao}) no valor de ${formatCurrency(ur.value)}`,
     },
   ];
 
@@ -184,7 +164,7 @@ const generateURMutationEvents = (ur: ClientUR, formatCurrency: (value: number) 
     events.push({
       date: ur.settlementDate,
       title: 'Liquidação',
-      description: `Liquidação ${ur.type === 'credito' ? 'de crédito' : 'de débito'} processada pela ${ur.acquirer}`,
+      description: `Liquidação processada pela ${ur.credenciadora}`,
     });
   }
 
@@ -223,11 +203,13 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
   const [showOperationSelector, setShowOperationSelector] = useState(false);
   const [urAcquirerFilter, setUrAcquirerFilter] = useState('all');
   const [urBrandFilter, setUrBrandFilter] = useState('all');
-  const [urTypeFilter, setUrTypeFilter] = useState<'all' | 'credito' | 'debito'>('all');
   const [urSettlementStart, setUrSettlementStart] = useState('');
   const [urSettlementEnd, setUrSettlementEnd] = useState('');
   const [urSettlementSort, setUrSettlementSort] = useState<'asc' | 'desc' | null>(null);
-  const [selectedUR, setSelectedUR] = useState<ClientUR | null>(null);
+  const [selectedUR, setSelectedUR] = useState<UrExibicao | null>(null);
+  const [urs, setUrs] = useState<UrExibicao[]>([]);
+  const [isLoadingUrs, setIsLoadingUrs] = useState(false);
+  const [proximoCursor, setProximoCursor] = useState<number | null>(null);
   const [isCreditRecoveryOpen, setIsCreditRecoveryOpen] = useState(false);
   const [isGuaranteesOpen, setIsGuaranteesOpen] = useState(false);
   const [isPrepaymentOpen, setIsPrepaymentOpen] = useState(false);
@@ -312,16 +294,47 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
 
   const radarData: RadarData[] = useMemo(() => generateDailyData(), []);
 
-  const clientURs: ClientUR[] = useMemo(
-    () => (selectedClient ? generateClientURs(selectedClient.id, selectedClient.document) : []),
-    [selectedClient?.id, selectedClient?.document]
+  useEffect(() => {
+    if (!selectedClient) {
+      setUrs([]);
+      setProximoCursor(null);
+      return;
+    }
+    setIsLoadingUrs(true);
+    listAgendaUrs({ ufr: selectedClient.document, limit: 100 })
+      .then((resposta) => {
+        setUrs(resposta.urs.map(mapearUrExibicao));
+        setProximoCursor(resposta.proximoCursor);
+      })
+      .catch(() => showToast('error', 'Erro ao carregar unidades recebíveis'))
+      .finally(() => setIsLoadingUrs(false));
+  }, [selectedClient]);
+
+  function carregarMaisUrs() {
+    if (!selectedClient || proximoCursor === null) return;
+    setIsLoadingUrs(true);
+    listAgendaUrs({ ufr: selectedClient.document, cursor: proximoCursor, limit: 100 })
+      .then((resposta) => {
+        setUrs((prev) => [...prev, ...resposta.urs.map(mapearUrExibicao)]);
+        setProximoCursor(resposta.proximoCursor);
+      })
+      .catch(() => showToast('error', 'Erro ao carregar mais unidades recebíveis'))
+      .finally(() => setIsLoadingUrs(false));
+  }
+
+  const acquirerOptions = useMemo(
+    () => Array.from(new Set(urs.map((ur) => ur.credenciadora))).sort(),
+    [urs]
+  );
+  const brandOptions = useMemo(
+    () => Array.from(new Set(urs.map((ur) => ur.arranjoDescricao))).sort(),
+    [urs]
   );
 
-  const filteredClientURs = clientURs
+  const filteredClientURs = urs
     .filter((ur) => {
-      if (urAcquirerFilter !== 'all' && ur.acquirer !== urAcquirerFilter) return false;
-      if (urBrandFilter !== 'all' && ur.brand !== urBrandFilter) return false;
-      if (urTypeFilter !== 'all' && ur.type !== urTypeFilter) return false;
+      if (urAcquirerFilter !== 'all' && ur.credenciadora !== urAcquirerFilter) return false;
+      if (urBrandFilter !== 'all' && ur.arranjoDescricao !== urBrandFilter) return false;
       if (urSettlementStart && ur.settlementDate < urSettlementStart) return false;
       if (urSettlementEnd && ur.settlementDate > urSettlementEnd) return false;
       return true;
@@ -336,7 +349,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
     setUrSettlementSort((prev) => (prev === 'asc' ? 'desc' : prev === 'desc' ? null : 'asc'));
   };
 
-  const getURStatusStyle = (status: ClientUR['status']) => {
+  const getURStatusStyle = (status: UrExibicao['status']) => {
     switch (status) {
       case 'bloqueado': return 'bg-red-100 text-red-800';
       case 'disponivel': return 'bg-blue-100 text-blue-800';
@@ -344,7 +357,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
     }
   };
 
-  const getURStatusLabel = (status: ClientUR['status']) => {
+  const getURStatusLabel = (status: UrExibicao['status']) => {
     switch (status) {
       case 'bloqueado': return 'Bloqueado';
       case 'disponivel': return 'Disponível';
@@ -701,8 +714,8 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">Todos</option>
-              {UR_ACQUIRERS.map((acquirer) => (
-                <option key={acquirer} value={acquirer}>{acquirer}</option>
+              {acquirerOptions.map((nome) => (
+                <option key={nome} value={nome}>{nome}</option>
               ))}
             </select>
           </div>
@@ -715,22 +728,9 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">Todas</option>
-              {UR_BRANDS.map((brand) => (
-                <option key={brand} value={brand}>{brand}</option>
+              {brandOptions.map((descricao) => (
+                <option key={descricao} value={descricao}>{descricao}</option>
               ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Tipo</label>
-            <select
-              value={urTypeFilter}
-              onChange={(e) => setUrTypeFilter(e.target.value as typeof urTypeFilter)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">Todos</option>
-              <option value="credito">Crédito</option>
-              <option value="debito">Débito</option>
             </select>
           </div>
 
@@ -764,7 +764,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
           )}
 
           <div className="text-sm text-gray-500 ml-auto pb-2.5">
-            {filteredClientURs.length} de {clientURs.length} URs
+            {filteredClientURs.length} de {urs.length} URs
           </div>
         </div>
 
@@ -774,7 +774,6 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credenciador</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bandeira</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <button
                     onClick={toggleUrSettlementSort}
@@ -801,9 +800,8 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
                   onClick={() => setSelectedUR(ur)}
                   className="hover:bg-gray-50 transition-colors cursor-pointer"
                 >
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{ur.acquirer}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{ur.brand}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 capitalize">{ur.type === 'credito' ? 'Crédito' : 'Débito'}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{ur.credenciadora}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{ur.arranjoDescricao}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
                     {new Date(ur.settlementDate).toLocaleDateString('pt-BR')}
                   </td>
@@ -818,10 +816,26 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
             </tbody>
           </table>
 
-          {filteredClientURs.length === 0 && (
+          {isLoadingUrs && urs.length === 0 && (
+            <div className="text-center py-12 text-gray-500">Carregando URs...</div>
+          )}
+
+          {!isLoadingUrs && filteredClientURs.length === 0 && (
             <div className="text-center py-12">
               <div className="text-gray-500 mb-1">Nenhuma UR encontrada</div>
               <div className="text-sm text-gray-400">Tente ajustar os filtros</div>
+            </div>
+          )}
+
+          {proximoCursor !== null && (
+            <div className="text-center py-4">
+              <button
+                onClick={carregarMaisUrs}
+                disabled={isLoadingUrs}
+                className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoadingUrs ? 'Carregando...' : 'Carregar mais'}
+              </button>
             </div>
           )}
         </div>
@@ -838,9 +852,9 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
           >
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">{selectedUR.acquirer} · {selectedUR.brand}</h2>
+                <h2 className="text-lg font-bold text-gray-900">{selectedUR.credenciadora} · {selectedUR.arranjoDescricao}</h2>
                 <p className="text-sm text-gray-600">
-                  {selectedUR.type === 'credito' ? 'Crédito' : 'Débito'} — Liquidação em {new Date(selectedUR.settlementDate).toLocaleDateString('pt-BR')}
+                  Liquidação em {new Date(selectedUR.settlementDate).toLocaleDateString('pt-BR')}
                 </p>
               </div>
               <div className="flex items-center space-x-3">
@@ -861,10 +875,6 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Identificação</h3>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Referência Externa</p>
-                    <p className="text-sm text-gray-900 font-mono">{selectedUR.referenciaExterna}</p>
-                  </div>
                   <div>
                     <p className="text-xs text-gray-500 mb-0.5">Entidade Registradora</p>
                     <p className="text-sm text-gray-900">{selectedUR.entidadeRegistradora}</p>
@@ -933,7 +943,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
               <div className="border-t border-gray-200 pt-4">
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Informações de Pagamento</h3>
                 <div className="space-y-3">
-                  {selectedUR.listaInformacoesPagamento.map((info, index) => (
+                  {gerarInformacaoPagamentoMock(selectedUR).map((info, index) => (
                     <div key={index} className="border border-gray-200 rounded-lg p-3 space-y-2">
                       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                         <div>
