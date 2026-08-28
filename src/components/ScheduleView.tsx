@@ -187,8 +187,7 @@ interface OptInClient {
 
 export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const selectedClientRef = useRef(selectedClient);
-  selectedClientRef.current = selectedClient;
+  const clienteSessaoRef = useRef(0);
   const [bloqueadoExpanded, setBloqueadoExpanded] = useState(false);
   const [bloqueadoFilter, setBloqueadoFilter] = useState<'all' | 'mine' | 'others'>('all');
   const [liquidadoHojeExpanded, setLiquidadoHojeExpanded] = useState(false);
@@ -297,6 +296,9 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
   const radarData: RadarData[] = useMemo(() => generateDailyData(), []);
 
   useEffect(() => {
+    clienteSessaoRef.current += 1;
+    const sessaoAtual = clienteSessaoRef.current;
+
     if (!selectedClient) {
       setUrs([]);
       setProximoCursor(null);
@@ -304,48 +306,44 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
       setUrBrandFilter('all');
       return;
     }
-    let cancelado = false;
     setIsLoadingUrs(true);
     setUrAcquirerFilter('all');
     setUrBrandFilter('all');
     const ufr = selectedClient.document.replace(/\D/g, '');
     listAgendaUrs({ ufr, limit: 100 })
       .then((resposta) => {
-        if (cancelado) return;
+        if (sessaoAtual !== clienteSessaoRef.current) return;
         setUrs(resposta.urs.map(mapearUrExibicao));
         setProximoCursor(resposta.proximoCursor);
       })
       .catch(() => {
-        if (cancelado) return;
+        if (sessaoAtual !== clienteSessaoRef.current) return;
         showToast('error', 'Erro ao carregar unidades recebíveis');
         setUrs([]);
         setProximoCursor(null);
       })
       .finally(() => {
-        if (!cancelado) setIsLoadingUrs(false);
+        if (sessaoAtual === clienteSessaoRef.current) setIsLoadingUrs(false);
       });
-    return () => {
-      cancelado = true;
-    };
   }, [selectedClient]);
 
   function carregarMaisUrs() {
     if (!selectedClient || proximoCursor === null) return;
-    const clienteNaChamada = selectedClient;
-    const ufr = clienteNaChamada.document.replace(/\D/g, '');
+    const sessaoDaChamada = clienteSessaoRef.current;
+    const ufr = selectedClient.document.replace(/\D/g, '');
     setIsLoadingUrs(true);
     listAgendaUrs({ ufr, cursor: proximoCursor, limit: 100 })
       .then((resposta) => {
-        if (selectedClientRef.current !== clienteNaChamada) return;
+        if (sessaoDaChamada !== clienteSessaoRef.current) return;
         setUrs((prev) => [...prev, ...resposta.urs.map(mapearUrExibicao)]);
         setProximoCursor(resposta.proximoCursor);
       })
       .catch(() => {
-        if (selectedClientRef.current !== clienteNaChamada) return;
+        if (sessaoDaChamada !== clienteSessaoRef.current) return;
         showToast('error', 'Erro ao carregar mais unidades recebíveis');
       })
       .finally(() => {
-        if (selectedClientRef.current === clienteNaChamada) setIsLoadingUrs(false);
+        if (sessaoDaChamada === clienteSessaoRef.current) setIsLoadingUrs(false);
       });
   }
 
