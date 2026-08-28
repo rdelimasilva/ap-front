@@ -19,7 +19,7 @@
 - **`src/data/arranjosCerc.ts` é novo** (não existe ainda) — mesmo estilo/formato do `credenciadorasCerc.ts` (interface + array), pra consistência. Vai duplicar os mesmos 47 códigos que já estão inline em `NewOptInModal.tsx` (`ARRANJOS_PAGAMENTO`, não exportado) — duplicação aceita conscientemente porque não podemos tocar naquele arquivo; consolidação (`NewOptInModal.tsx` passar a importar de `arranjosCerc.ts`) fica pra quando aquele outro trabalho for commitado.
 - **JSON de erro do agenda-service:** `{"erro": "<CODIGO>", "mensagem": "<texto>"}` — mesmo shape que `optinApi.ts` já trata via `data?.erro`/`data?.mensagem`.
 - **Valores monetários da API são `string`** (`Decimal` serializado, nunca `float`) — todo campo `AgendaUrDTO.valor*` é convertido com `Number(...)` no ponto de adaptação (`mapearUrExibicao`), nunca exibido cru.
-- **Sem framework de teste automatizado neste projeto** — o "test" de cada task é `npx tsc --noEmit` (compilação limpa) + `npx eslint <arquivos da task>` (lint escopado às mudanças desta task — projeto já tem erros de lint pré-existentes em outros arquivos, não é escopo corrigi-los). Verificação end-to-end real é manual, na Task 5.
+- **Sem framework de teste automatizado neste projeto** — o "test" de cada task é `npx tsc --noEmit` (compilação limpa) + `npx eslint <arquivos da task>` (lint escopado às mudanças desta task — projeto já tem erros de lint pré-existentes em outros arquivos, não é escopo corrigi-los). Verificação end-to-end real é manual, na Task 4.
 - **Backend precisa estar rodando** em `http://localhost:8000` (`python manage.py runserver 8000` em `ap-back-consulta-agenda`) pra qualquer verificação manual funcionar.
 - **Campos sem fonte real, decisão já tomada (ver spec §2.1bis):** `referenciaExterna` (removida da seção Identificação do modal — backend não mapeia esse campo pra nenhuma coluna ainda, design doc do backend §14 item 5), `type` credito/débito (removido — sem fonte confiável, a descrição do arranjo já embute bandeira+modalidade numa string só), `status` bloqueado/disponível/liquidado (aproximado por heurística `valorBloqueado>0→bloqueado, valorLivre>0→disponível, senão→liquidado`, documentado como aproximação no código), "Informações de Pagamento" e "Eventos de Mutação" (continuam mockados, sem endpoint — `agenda_ur_pagamento`/`agenda_ur_evento`).
 
@@ -260,14 +260,14 @@ git commit -m "feat: agendaApi.ts — serviço de API do agenda-service (Task 2)
 
 ---
 
-### Task 3: `ScheduleView.tsx` — dado real, adaptador e paginação
+### Task 3: `ScheduleView.tsx` — dado real, adaptador, paginação e JSX
 
 **Files:**
 - Modify: `src/components/ScheduleView.tsx`
 
 **Interfaces:**
 - Consumes: `listAgendaUrs`, `AgendaUrDTO` (Task 2), `ARRANJOS_CERC` (Task 1), `CREDENCIADORAS_CERC` (já existe em `src/data/credenciadorasCerc.ts`).
-- Produces: `UrExibicao` (interface local), `mapearUrExibicao`, `nomeCredenciadora`, `descricaoArranjo`, `statusDerivado` — usados pela Task 4 (JSX).
+- Produces: `UrExibicao` (interface local), `mapearUrExibicao`, `nomeCredenciadora`, `descricaoArranjo`, `statusDerivado`, `gerarInformacaoPagamentoMock`, `acquirerOptions`, `brandOptions`, `carregarMaisUrs`, `isLoadingUrs`, `proximoCursor` — todos usados na segunda metade desta mesma task (Steps 7-14, JSX).
 
 - [ ] **Step 1: Atualizar imports no topo do arquivo**
 
@@ -553,31 +553,9 @@ Substituir por:
           </div>
 ```
 
-- [ ] **Step 7: Verificar compilação (ainda vai falhar no JSX — Task 4 termina a migração)**
+Continue no mesmo arquivo, sem commit intermediário — os steps abaixo terminam a migração da JSX que os Steps 1-6 deixaram pendente (o arquivo não compila entre um step e outro; só precisa compilar limpo ao final do Step 14).
 
-Run: `npx tsc --noEmit`
-Expected: erros nos trechos JSX que ainda referenciam `ur.acquirer`/`ur.brand`/`ur.type`/`UR_ACQUIRERS`/`UR_BRANDS`/`urTypeFilter`/`selectedUR.listaInformacoesPagamento` (a Task 4 resolve). Confirma que os Steps 1-6 desta task não introduziram nenhum erro **novo** fora desses pontos já esperados.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add src/components/ScheduleView.tsx
-git commit -m "feat: busca real de URs via agendaApi + adaptador de exibição (Task 3)"
-```
-
-(Commit intencionalmente com o arquivo ainda não compilando 100% — Task 4 completa a migração da JSX no mesmo arquivo. Se preferir manter cada commit compilável, funda Tasks 3 e 4 num único commit ao final da Task 4 em vez de commitar aqui.)
-
----
-
-### Task 4: `ScheduleView.tsx` — JSX (filtros, tabela, modal de detalhe)
-
-**Files:**
-- Modify: `src/components/ScheduleView.tsx` (continuação da Task 3, mesmo arquivo)
-
-**Interfaces:**
-- Consumes: `UrExibicao`, `mapearUrExibicao`, `gerarInformacaoPagamentoMock`, `acquirerOptions`, `brandOptions`, `carregarMaisUrs`, `isLoadingUrs`, `proximoCursor` (Task 3).
-
-- [ ] **Step 1: Remover o filtro "Tipo" e trocar as opções de "Credenciador"/"Bandeira" pelas listas dinâmicas**
+- [ ] **Step 7: Remover o filtro "Tipo" e trocar as opções de "Credenciador"/"Bandeira" pelas listas dinâmicas**
 
 Localizar o bloco (filtro "Credenciador" até o fim do filtro "Tipo"):
 
@@ -656,7 +634,7 @@ Substituir por:
           </div>
 ```
 
-- [ ] **Step 2: Remover a coluna "Tipo" da tabela e trocar `acquirer`/`brand` pelos campos reais**
+- [ ] **Step 8: Remover a coluna "Tipo" da tabela e trocar `acquirer`/`brand` pelos campos reais**
 
 Localizar o `<thead>`:
 
@@ -694,7 +672,7 @@ Substituir por:
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
 ```
 
-- [ ] **Step 3: Adicionar loading e botão "Carregar mais" após a tabela**
+- [ ] **Step 9: Adicionar loading e botão "Carregar mais" após a tabela**
 
 Localizar:
 
@@ -738,7 +716,7 @@ Substituir por:
       </div>
 ```
 
-- [ ] **Step 4: Atualizar o cabeçalho do modal de detalhe**
+- [ ] **Step 10: Atualizar o cabeçalho do modal de detalhe**
 
 Localizar:
 
@@ -762,7 +740,7 @@ Substituir por:
               </div>
 ```
 
-- [ ] **Step 5: Remover "Referência Externa" da seção Identificação**
+- [ ] **Step 11: Remover "Referência Externa" da seção Identificação**
 
 Localizar:
 
@@ -786,7 +764,7 @@ Substituir por:
 
 (Campo removido porque o backend não mapeia `referenciaExterna` pra nenhuma coluna ainda — design doc do backend §14 item 5, ver Global Constraints deste plano.)
 
-- [ ] **Step 6: Trocar a lista de pagamentos mockada pela função nova**
+- [ ] **Step 12: Trocar a lista de pagamentos mockada pela função nova**
 
 Localizar:
 
@@ -800,21 +778,21 @@ Substituir por:
                   {gerarInformacaoPagamentoMock(selectedUR).map((info, index) => (
 ```
 
-- [ ] **Step 7: Verificar compilação e lint (agora deve estar limpo)**
+- [ ] **Step 13: Verificar compilação e lint (agora deve estar limpo)**
 
 Run: `npx tsc --noEmit && npx eslint src/components/ScheduleView.tsx`
 Expected: sem erros. Se `tsc` ainda reclamar de algum uso remanescente de `ClientUR`/`acquirer`/`brand`/`type`/`UR_ACQUIRERS`/`UR_BRANDS`/`urTypeFilter`/`listaInformacoesPagamento`, localizar e ajustar (pode haver mais um uso em `ScheduleModal.tsx` ou outro trecho de `ScheduleView.tsx` fora do que este plano previu — investigar e resolver seguindo os mesmos princípios das Global Constraints antes de prosseguir).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 14: Commit**
 
 ```bash
 git add src/components/ScheduleView.tsx
-git commit -m "feat: JSX real de URs — filtros, tabela e modal de detalhe (Task 4)"
+git commit -m "feat: busca real de URs via agendaApi, adaptador de exibição e JSX (Task 3)"
 ```
 
 ---
 
-### Task 5: Verificação manual end-to-end
+### Task 4: Verificação manual end-to-end
 
 **Files:** nenhum (só verificação).
 
@@ -848,7 +826,7 @@ npm run dev
 
 ```bash
 git add -A
-git commit -m "fix: ajustes pós-verificação manual (Task 5)"
+git commit -m "fix: ajustes pós-verificação manual (Task 4)"
 ```
 
 Se nada precisou de ajuste, pular este commit.
