@@ -128,7 +128,45 @@ const [isLoadingUrs, setIsLoadingUrs] = useState(false);
 const [proximoCursor, setProximoCursor] = useState<number | null>(null);
 ```
 
-A interface `ClientUR` e a função `generateClientURs` (`ScheduleView.tsx:40-63`, `83-142`) são removidas — os componentes que hoje leem campos de `ClientUR` passam a ler os campos equivalentes de `AgendaUrDTO` diretamente (nomes já batem: `constituicao`, `valorConstituidoTotal`, `valorBloqueado`, `valorLivre`, `valorTotalUR`, `dataHoraUltimaAtualizacao`).
+A interface `ClientUR` e a função `generateClientURs` (`ScheduleView.tsx:40-63`, `83-142`) são removidas. Nem todo campo de `ClientUR` tem equivalente direto em `AgendaUrDTO` — ver §2.1bis pra como cada um é resolvido.
+
+### 2.1bis Campos sem correspondência direta — dados de referência CERC
+
+`ClientUR` tinha campos derivados/decorativos que o mock inventava (`acquirer`, `brand`, `type`, `status`) e que `AgendaUrDTO` não devolve prontos. Em vez de continuar fabricando ou mostrar código cru, o usuário forneceu duas planilhas de referência oficiais da CERC que resolvem isso com dado real:
+
+- `arranjos_pagamento_cerc.xlsx` (47 linhas: `codigo` → `descricao`, ex. `VCC` → "Visa Cartão de Crédito") — mesma tabela que o backend documenta como pendente de seed (`dominio_arranjo`, risco 11 do design doc do agenda-service), mas usada aqui **só como dado estático de exibição no front**, sem tocar o backend.
+- `Cred e Sub final v1 RLS.xlsx` (262 linhas: CNPJ de 14 dígitos → razão social + papel Credenciadora/Subcredenciadora) — não existe tabela equivalente no schema do backend; fica só no front.
+
+Novos arquivos de dados estáticos:
+- `src/data/arranjosCerc.ts` — exporta `ARRANJO_DESCRICOES: Record<string, string>` (código → descrição completa, já inclui bandeira + modalidade juntos, ex. `"Visa Cartão de Crédito"` — não precisa separar em bandeira/tipo).
+- `src/data/credenciadorasCerc.ts` — exporta `CREDENCIADORA_NOMES: Record<string, string>` (CNPJ só dígitos → razão social).
+
+Função de apoio em `ScheduleView.tsx` (ou extraída pra um util, ver Task 2 do plano):
+
+```typescript
+function descricaoArranjo(codigo: string): string {
+  return ARRANJO_DESCRICOES[codigo] ?? codigo; // fallback: código cru se não estiver na lista de 47
+}
+
+function nomeCredenciadora(cnpj: string): string {
+  const digitos = cnpj.replace(/\D/g, '');
+  return CREDENCIADORA_NOMES[digitos] ?? cnpj; // fallback: CNPJ cru se não estiver na lista de 262
+}
+```
+
+Isso substitui as colunas/filtros separados de "Bandeira" e "Tipo" (crédito/débito) por uma única exibição de descrição do arranjo — a planilha já entrega bandeira+modalidade combinados numa string só (ex. "Visa Cartão de Débito"), então não há uma forma limpa de separar "tipo" como filtro independente sem parsing de string frágil. O filtro `urTypeFilter` (crédito/débito) é removido; o filtro `urBrandFilter` passa a filtrar por essa descrição combinada (ou pelo código bruto, o que for mais simples de popular no dropdown — decisão de implementação da Task 2).
+
+`status` (bloqueado/disponível/liquidado) não tem fonte exata (dado de liquidação efetiva mora em `agenda_ur_pagamento`, não exposto) — aproximado por heurística, documentada inline no código como aproximação:
+
+```typescript
+function statusDerivado(ur: AgendaUrDTO): 'bloqueado' | 'disponivel' | 'liquidado' {
+  if (Number(ur.valorBloqueado) > 0) return 'bloqueado';
+  if (Number(ur.valorLivre) > 0) return 'disponivel';
+  return 'liquidado'; // por eliminação — fica preciso se um endpoint futuro expuser data_liquidacao_efetiva
+}
+```
+
+**Recomendação separada (fora deste plano):** semear `dominio_arranjo` no backend com a mesma planilha de 47 códigos fecharia o risco 11 de vez e beneficiaria outros consumidores futuros (ex. `porArranjo` de `/urs/posicao`). Não faz parte deste corte de trabalho — só a versão estática no front, por decisão do usuário.
 
 ### 2.2 Busca inicial e paginação
 
@@ -170,7 +208,8 @@ Botão "Carregar mais" visível só quando `proximoCursor !== null`, desabilitad
 
 | Seção | Fonte |
 |---|---|
-| Identificação (UFR, titular, credenciadora, arranjo, data de liquidação, constituição) | Real — `AgendaUrDTO` |
+| Identificação (UFR, titular, data de liquidação, constituição) | Real — `AgendaUrDTO` |
+| Credenciadora / Arranjo (nome de exibição) | Real — `AgendaUrDTO.cnpjCredenciadora`/`.codigoArranjo` traduzidos via `credenciadorasCerc.ts`/`arranjosCerc.ts` (§2.1bis), fallback pro código/CNPJ cru se não estiver nas listas |
 | Valores (constituído total, bloqueado, livre, total UR, antecipação pré) | Real — `AgendaUrDTO` |
 | Última atualização / origem | Real — `AgendaUrDTO` |
 | Informações de Pagamento (efeitos de liquidação por linha) | **Mockado** — sem endpoint (`agenda_ur_pagamento` não é exposto) |
