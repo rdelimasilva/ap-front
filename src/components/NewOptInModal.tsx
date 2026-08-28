@@ -3,6 +3,7 @@ import { X, FileText, Send, Loader2, Search, Plus, ChevronRight } from 'lucide-r
 import { NewClienteOptinModal } from './NewClienteOptinModal';
 import { showToast } from '../hooks/useToast';
 import { createOptin, listClientes, OptinApiError, type ClienteDTO } from '../services/optinApi';
+import { CREDENCIADORAS_CERC } from '../data/credenciadorasCerc';
 
 interface NewOptInModalProps {
   isOpen: boolean;
@@ -10,10 +11,74 @@ interface NewOptInModalProps {
   onSuccess: () => void;
 }
 
-// Credenciadoras e arranjos de pagamento disponíveis para a definição da unidade recebível (CERC-AP004).
-// "99T" no envio real significa "todas" — ver handleSubmit.
-const CREDENCIADORAS = ['Cielo', 'Rede', 'Stone', 'GetNet', 'Dock'];
-const ARRANJOS_PAGAMENTO = ['VISA', 'MASTERCARD', 'ELO', 'HIPERCARD'];
+// Arranjos de pagamento e credenciadoras/subcredenciadoras disponíveis para a definição
+// da unidade recebível (CERC-AP004). "99T" no envio real significa "todas" — ver handleSubmit.
+
+// Domínio oficial de arranjos de pagamento da CERC (arranjos_pagamento_cerc.xlsx, 2026-08-28).
+const ARRANJOS_PAGAMENTO: { codigo: string; descricao: string }[] = [
+  { codigo: 'BCD', descricao: 'Banescard Cartão de Débito' },
+  { codigo: 'HCD', descricao: 'Hiper Débito' },
+  { codigo: 'NUD', descricao: 'NuPay Débito' },
+  { codigo: 'VCD', descricao: 'Visa Cartão de Débito' },
+  { codigo: 'ACD', descricao: 'Amex Débito' },
+  { codigo: 'CBD', descricao: 'Cabal Débito' },
+  { codigo: 'SCD', descricao: 'Sorocred Cartão de Débito' },
+  { codigo: 'ECD', descricao: 'Elo Cartão de Débito' },
+  { codigo: 'BVV', descricao: 'Ben Visa Vale' },
+  { codigo: 'MCD', descricao: 'Mastercard Cartão de Débito' },
+  { codigo: 'OCD', descricao: 'Ourocard Cartão de Débito' },
+  { codigo: 'SPC', descricao: 'Sem Parar' },
+  { codigo: 'FRC', descricao: 'Fortbrasil' },
+  { codigo: 'VCB', descricao: 'Visa Cartão Benefícios' },
+  { codigo: 'CUP', descricao: 'Cup Crédito' },
+  { codigo: 'ECC', descricao: 'Elo Cartão de Crédito' },
+  { codigo: 'MXC', descricao: 'Maxifrota' },
+  { codigo: 'VDC', descricao: 'Verdecard Cartão de Crédito' },
+  { codigo: 'CSC', descricao: 'Credi-Shop' },
+  { codigo: 'ECB', descricao: 'Elo Cartão Benefícios' },
+  { codigo: 'CZC', descricao: 'CREDZ Crédito' },
+  { codigo: 'JCC', descricao: 'JCB Cartão de Crédito' },
+  { codigo: 'SCC', descricao: 'Sorocred Cartão de Crédito' },
+  { codigo: 'NUC', descricao: 'NuPay Crédito' },
+  { codigo: 'BCC', descricao: 'Banescard Cartão de Crédito' },
+  { codigo: 'BRC', descricao: 'Brasil Card' },
+  { codigo: 'GCC', descricao: 'Goodcard Crédito' },
+  { codigo: 'DAC', descricao: 'Dacasa' },
+  { codigo: 'SFC', descricao: 'Senff' },
+  { codigo: 'CCD', descricao: 'Calcard' },
+  { codigo: 'MAC', descricao: 'Mais!' },
+  { codigo: 'BNC', descricao: 'Banese Card' },
+  { codigo: 'HCC', descricao: 'Hipercard Cartão de Crédito' },
+  { codigo: 'ALC', descricao: 'Alelo Credito Pós' },
+  { codigo: 'MCB', descricao: 'Mastercard Cartão Benefícios' },
+  { codigo: 'AUC', descricao: 'Aura' },
+  { codigo: 'DCC', descricao: 'Liquidações de transações transfronteiriças Diners' },
+  { codigo: 'AVC', descricao: 'Avista' },
+  { codigo: 'RCC', descricao: 'Redesplan' },
+  { codigo: 'CAC', descricao: 'Cielo Amex Crédito' },
+  { codigo: 'VCC', descricao: 'Visa Cartão de Crédito' },
+  { codigo: 'AGC', descricao: 'Agiplan' },
+  { codigo: 'TKC', descricao: 'TicketLog Pós' },
+  { codigo: 'CBC', descricao: 'Cabal Crédito' },
+  { codigo: 'MCC', descricao: 'Mastercard Cartão de Crédito' },
+  { codigo: 'ACC', descricao: 'Amex Cartão de Crédito' },
+  { codigo: 'DBC', descricao: 'Discover' },
+];
+
+const CATEGORIAS_ARRANJO = ['Débito', 'Crédito', 'Benefícios', 'Outros'] as const;
+
+function categoriaArranjo(descricao: string): (typeof CATEGORIAS_ARRANJO)[number] {
+  const d = descricao.toLowerCase();
+  if (d.includes('débito') || d.includes('debito')) return 'Débito';
+  if (d.includes('benefício') || d.includes('beneficio')) return 'Benefícios';
+  if (d.includes('crédito') || d.includes('credito')) return 'Crédito';
+  return 'Outros';
+}
+
+const ARRANJOS_POR_CATEGORIA = CATEGORIAS_ARRANJO.map(categoria => ({
+  categoria,
+  itens: ARRANJOS_PAGAMENTO.filter(a => categoriaArranjo(a.descricao) === categoria),
+})).filter(grupo => grupo.itens.length > 0);
 
 export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [step, setStep] = useState<'select-client' | 'opt-in-details'>('select-client');
@@ -32,6 +97,7 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
   });
   const [todasCredenciadoras, setTodasCredenciadoras] = useState(true);
   const [credenciadorasSelecionadas, setCredenciadorasSelecionadas] = useState<string[]>([]);
+  const [buscaCredenciadora, setBuscaCredenciadora] = useState('');
   const [todosArranjos, setTodosArranjos] = useState(true);
   const [arranjosSelecionados, setArranjosSelecionados] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -166,6 +232,12 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
     client.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
     client.documento.includes(searchTerm)
   );
+
+  const credenciadorasFiltradas = CREDENCIADORAS_CERC.filter(c => {
+    const digitos = buscaCredenciadora.replace(/\D/g, '');
+    return c.nome.toLowerCase().includes(buscaCredenciadora.toLowerCase()) ||
+      (digitos.length > 0 && c.cnpj.includes(digitos));
+  });
 
   return (
     <>
@@ -374,25 +446,46 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                       <span className="text-sm font-medium text-gray-700">Todas as credenciadoras (99T)</span>
                     </label>
                     {!todasCredenciadoras && (
-                      <div className="flex flex-wrap gap-2 pl-6">
-                        {CREDENCIADORAS.map((acquirer) => (
-                          <label
-                            key={acquirer}
-                            className={`px-3 py-1.5 rounded-lg text-sm border cursor-pointer transition-colors ${
-                              credenciadorasSelecionadas.includes(acquirer)
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={credenciadorasSelecionadas.includes(acquirer)}
-                              onChange={() => toggleCredenciadora(acquirer)}
-                              className="sr-only"
-                            />
-                            {acquirer}
-                          </label>
-                        ))}
+                      <div className="pl-6">
+                        <div className="flex items-center justify-between mb-2">
+                          {credenciadorasSelecionadas.length > 0 && (
+                            <p className="text-xs text-gray-500">{credenciadorasSelecionadas.length} selecionada(s)</p>
+                          )}
+                        </div>
+                        <div className="relative mb-2">
+                          <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Buscar por nome ou CNPJ..."
+                            value={buscaCredenciadora}
+                            onChange={(e) => setBuscaCredenciadora(e.target.value)}
+                            className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+                          {credenciadorasFiltradas.length === 0 ? (
+                            <p className="text-sm text-gray-500 p-3">Nenhuma credenciadora encontrada</p>
+                          ) : (
+                            credenciadorasFiltradas.map(({ cnpj, nome, tipo }) => (
+                              <label
+                                key={cnpj}
+                                className="flex items-center space-x-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={credenciadorasSelecionadas.includes(cnpj)}
+                                  onChange={() => toggleCredenciadora(cnpj)}
+                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="flex-1 text-gray-900">{nome}</span>
+                                <span className="text-xs text-gray-400">{cnpj}</span>
+                                <span className={`text-xs px-1.5 py-0.5 rounded ${tipo === 'Credenciadora' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                                  {tipo}
+                                </span>
+                              </label>
+                            ))
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -408,25 +501,38 @@ export const NewOptInModal: React.FC<NewOptInModalProps> = ({ isOpen, onClose, o
                       <span className="text-sm font-medium text-gray-700">Todos os arranjos de pagamento (99T)</span>
                     </label>
                     {!todosArranjos && (
-                      <div className="flex flex-wrap gap-2 pl-6">
-                        {ARRANJOS_PAGAMENTO.map((arranjo) => (
-                          <label
-                            key={arranjo}
-                            className={`px-3 py-1.5 rounded-lg text-sm border cursor-pointer transition-colors ${
-                              arranjosSelecionados.includes(arranjo)
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={arranjosSelecionados.includes(arranjo)}
-                              onChange={() => toggleArranjo(arranjo)}
-                              className="sr-only"
-                            />
-                            {arranjo}
-                          </label>
-                        ))}
+                      <div className="pl-6">
+                        {arranjosSelecionados.length > 0 && (
+                          <p className="text-xs text-gray-500 mb-2">{arranjosSelecionados.length} selecionado(s)</p>
+                        )}
+                        <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg p-3 space-y-3">
+                          {ARRANJOS_POR_CATEGORIA.map(({ categoria, itens }) => (
+                            <div key={categoria}>
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{categoria}</p>
+                              <div className="flex flex-wrap gap-2">
+                                {itens.map(({ codigo, descricao }) => (
+                                  <label
+                                    key={codigo}
+                                    title={descricao}
+                                    className={`px-3 py-1.5 rounded-lg text-sm border cursor-pointer transition-colors ${
+                                      arranjosSelecionados.includes(codigo)
+                                        ? 'bg-blue-600 text-white border-blue-600'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={arranjosSelecionados.includes(codigo)}
+                                      onChange={() => toggleArranjo(codigo)}
+                                      className="sr-only"
+                                    />
+                                    {descricao} <span className="opacity-60">({codigo})</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
