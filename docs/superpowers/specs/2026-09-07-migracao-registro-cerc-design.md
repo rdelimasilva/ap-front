@@ -98,6 +98,8 @@ Resposta:
 
 Ordenação cronológica ascendente por `ocorrido_em`.
 
+Os dois índices de suporte que essa consulta precisa já existem, criados em `sql/schema/02-contratos-schema-fixes.sql`: `contrato_evento (contrato_id, ocorrido_em)` e `cerc_requisicao (correlacao_id)`.
+
 **Fontes e correlação.** Os eventos vêm de `contrato_evento` (populado hoje em `views.py:338` — `ContratoSubgarantido`, `:355` — `webhook_recebido`, e `:629` — `rejeicao_estrutural`). As requisições vêm de `cerc_requisicao`, correlacionadas pelo `correlacao_id`, que é gravado como `referencia_externa` na criação (`views.py:579`) e como `{referencia_externa}:{tipo_operacao}` nas operações pós-registro (`views.py:710`). A consulta filtra `correlacao_id IN (ref, ref:I, ref:B)` para o contrato em questão, e cada requisição é anexada ao evento imediatamente anterior a ela no tempo; requisições sem evento correspondente aparecem como entradas próprias de tipo `requisicao_cerc`, para que uma falha de rede sem evento de domínio continue visível.
 
 ### 3.3 Autenticação — o endpoint novo nasce protegido
@@ -112,10 +114,11 @@ GET https://contratos-service-...run.app/api/v1/contratos/38138785000136?limit=1
 
 Portanto:
 
-- O endpoint de eventos nasce com `@jwt_required` (mesmo decorador de `shared/jwt_auth.py` que o agenda-service usa), lendo o `financiador_id` do claim e recusando quando ele diverge do da URL.
+- `shared/jwt_auth.py` **é portado para o `ap-back-contratos`**, onde hoje não existe (o diretório tem `cloudsql_client`, `pubsub_auth`, `pubsub_client`, `secrets` e `tenant_config`). A fonte é `ap-back-consulta-agenda/shared/jwt_auth.py`, que valida RS256 contra `IAM_JWT_PUBLIC_KEY` com emissor `IAM_JWT_ISSUER` e exige o claim `financiador_id`. Isso traz junto duas variáveis de ambiente novas e a leitura do segredo `IAM_JWT_PUBLIC_KEY` já existente no projeto.
+- O endpoint de eventos nasce com `@jwt_required`, recusando quando o `financiador_id` do claim diverge do da URL.
 - `contratosApi.ts` passa a enviar `Authorization: Bearer` no `request()`, alinhado ao que o `agendaApi.ts:60` já faz.
 
-**Proteger as rotas de leitura já existentes fica fora desta spec** e está registrado como pendência em §10. Com o Bearer já sendo enviado por `contratosApi.ts` depois desta mudança, adicionar `@jwt_required` a elas passa a ser uma alteração de uma linha por rota.
+**Proteger as rotas de leitura já existentes fica fora desta spec** e está registrado como pendência em §10. Com o `jwt_auth` portado e o Bearer já sendo enviado por `contratosApi.ts`, adicionar `@jwt_required` a elas passa a ser uma alteração de uma linha por rota.
 
 ---
 
@@ -152,12 +155,14 @@ Envolve o `NewContratoModal.tsx` já existente (459 linhas, formulário completo
 ```ts
 interface ContratosCercListProps {
   documentoContratante?: string;
-  mostrarCabecalho?: boolean;
-  onNovoContrato?: () => void;
+  onSelecionarContrato: (id: string) => void;
+  recarregarToken?: number;
 }
 ```
 
-É a tabela atual (`ContratosCercModule.tsx:125-160`), com os mapas `STATUS_LABEL`/`STATUS_COLOR` e os formatadores movidos junto. Com `documentoContratante` preenchido, chama `listContratos({ documentoContratante })`; a busca por texto e o filtro de status continuam client-side como hoje. `mostrarCabecalho={false}` suprime título e subtítulo quando embutida numa seção que já tem cabeçalho próprio.
+É a tabela atual (`ContratosCercModule.tsx:125-160`), com os mapas `STATUS_LABEL`/`STATUS_COLOR` e os formatadores movidos junto. Com `documentoContratante` preenchido, chama `listContratos({ documentoContratante })`; a busca por texto e o filtro de status continuam client-side como hoje.
+
+O componente entrega barra de filtros e tabela, sem cabeçalho: com o item de menu removido, o único consumidor é a seção do `ClientDetail`, que já traz título e botão próprios. Uma prop para suprimir um cabeçalho que ninguém usa seria código morto no dia em que nasce.
 
 `contratosApi.ts:186` passa a aceitar o novo filtro:
 
@@ -201,7 +206,7 @@ No ramo da lista de clientes (`:1047`), onde não há cliente nem URs em context
 
 `ClientDetail.tsx` já organiza o conteúdo em seções colapsáveis controladas por `collapsedSections` (`:38`) — "Informações do Cliente", "Volumes por Credenciadora", "Contratos de Recebíveis", "Histórico de Valores". A seção nova entra com a chave `cerc-contracts`, logo após "Contratos de Recebíveis", contendo:
 
-- `<ContratosCercList documentoContratante={client.document} mostrarCabecalho={false} onNovoContrato={...} />`
+- `<ContratosCercList documentoContratante={client.document} onSelecionarContrato={...} recarregarToken={...} />`
 - Botão "Novo contrato CERC" no cabeçalho da seção, abrindo `CercGarantiaJourney` com `contexto={{ documentoContratante: client.document }}`.
 - Clique na linha abre o `ContratoDetailModal`, de onde saem inativação e baixa — a gestão pedida, já implementada e agora acessível a partir do cliente.
 
@@ -283,6 +288,8 @@ O front não tem suíte de testes automatizados hoje, e esta spec não introduz 
 **As rotas de leitura de contratos estão sem autenticação em produção.** `GET /api/v1/contratos/<financiador_id>` e `GET /api/v1/contratos/<financiador_id>/<contrato_id>` respondem 200 sem `Authorization`, num Cloud Run público, com o tenant vindo apenas do path. Quem souber a URL e um CNPJ de financiador lista os contratos dele: referências, identificadores, CNPJs de contratante e detentor, saldo devedor, limites, vencimentos e as URs alcançadas por cada garantia.
 
 O agenda-service trata a mesma classe de dado de forma oposta — `@jwt_required` com `financiador_id` vindo do claim, jamais da URL (`shared/jwt_auth.py:60-64`).
+
+Isso já é conhecido do time: está registrado em `ap-back-contratos/contratos/docs/superpowers/specs/2026-09-04-deploy-gcp-contratos-design.md:28`, que sugere exatamente reaproveitar o JWT do optin. O que esta spec acrescenta é a verificação de que a exposição está de pé em produção, e o porte do `jwt_auth` que torna o fechamento uma linha por rota.
 
 Esta spec não fecha essa lacuna porque ela precede o trabalho aqui descrito e tem decisão própria a tomar (rotação de chave, tratamento de 401 no front, janela de deploy coordenada entre front e back). O que esta spec faz é parar de aumentá-la: o endpoint novo, que seria o mais sensível dos três, nasce protegido.
 
