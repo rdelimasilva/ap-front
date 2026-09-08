@@ -140,8 +140,25 @@ export interface OperacaoPosRegistroResultado {
   protocolo: string | null;
 }
 
+export interface RequisicaoCercDTO {
+  recurso: string;
+  httpStatus: number | null;
+  tentativa: number;
+  requestBody: unknown;
+  responseBody: unknown;
+  criadoEm: string;
+}
+
+export interface EventoContratoDTO {
+  tipo: string;
+  ocorridoEm: string;
+  payload: unknown;
+  requisicoes: RequisicaoCercDTO[];
+}
+
 const BASE_URL = import.meta.env.VITE_CONTRATOS_API_BASE_URL as string;
 const FINANCIADOR_ID = import.meta.env.VITE_FINANCIADOR_ID as string;
+const DEV_JWT = import.meta.env.VITE_CONTRATOS_DEV_JWT as string;
 
 interface RequestOptions {
   body?: unknown;
@@ -150,7 +167,14 @@ interface RequestOptions {
 async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // Só o endpoint de eventos exige JWT hoje (ele devolve request/response
+      // crus da CERC, com dados bancários do domicílio). Enviar em todas as
+      // chamadas mantém o dia em que as demais rotas forem protegidas como
+      // uma mudança só do backend.
+      'Authorization': `Bearer ${DEV_JWT}`,
+    },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
@@ -186,7 +210,9 @@ function buildQuery(params: Record<string, string | number | undefined>): string
   return query ? `?${query}` : '';
 }
 
-export function listContratos(filtros: { status?: string; limit?: number } = {}): Promise<ContratoDTO[]> {
+export function listContratos(
+  filtros: { status?: string; limit?: number; documentoContratante?: string } = {},
+): Promise<ContratoDTO[]> {
   return request<{ dados: ContratoDTO[] }>('GET', `/contratos/${FINANCIADOR_ID}${buildQuery(filtros)}`).then(r => r.dados);
 }
 
@@ -204,4 +230,8 @@ export function inativarContrato(referenciaExterna: string): Promise<OperacaoPos
 
 export function baixarContrato(referenciaExterna: string): Promise<OperacaoPosRegistroResultado> {
   return request<OperacaoPosRegistroResultado>('POST', `/contratos/${FINANCIADOR_ID}/baixar`, { body: { referenciaExterna } });
+}
+
+export function getEventosContrato(id: string): Promise<EventoContratoDTO[]> {
+  return request<{ dados: EventoContratoDTO[] }>('GET', `/contratos/${FINANCIADOR_ID}/${id}/eventos`).then(r => r.dados);
 }
