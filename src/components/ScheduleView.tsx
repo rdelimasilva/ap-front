@@ -4,7 +4,7 @@ import { Client } from '../types';
 import { NewOptInModal } from './NewOptInModal';
 import { OptInDetailsModal } from './OptInDetailsModal';
 import { CreditRecoveryJourney } from './CreditRecoveryJourney';
-import { GuaranteesJourney } from './GuaranteesJourney';
+import { CercGarantiaJourney, type ContextoTrava } from './CercGarantiaJourney';
 import { PrepaymentJourney } from './PrepaymentJourney';
 import { AntecipationJourney } from './AntecipationJourney';
 import { OwnershipTransferJourney } from './OwnershipTransferJourney';
@@ -213,7 +213,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
   const [isLoadingUrs, setIsLoadingUrs] = useState(false);
   const [proximoCursor, setProximoCursor] = useState<number | null>(null);
   const [isCreditRecoveryOpen, setIsCreditRecoveryOpen] = useState(false);
-  const [isGuaranteesOpen, setIsGuaranteesOpen] = useState(false);
+  const [isCercGarantiaOpen, setIsCercGarantiaOpen] = useState(false);
   const [isPrepaymentOpen, setIsPrepaymentOpen] = useState(false);
   const [isAntecipationOpen, setIsAntecipationOpen] = useState(false);
   const [isOwnershipTransferOpen, setIsOwnershipTransferOpen] = useState(false);
@@ -426,6 +426,30 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
       const cmp = a.settlementDate.localeCompare(b.settlementDate);
       return urSettlementSort === 'asc' ? cmp : -cmp;
     });
+
+  // Acima disto a lista deixa de ser um recorte útil e o formulário cai para
+  // a sentinela "todas" (99T) — ver NewContratoModal e spec §9.
+  const LIMITE_LISTA_CONTEXTO = 10;
+
+  // O contexto sai das URs, e não do estado dos filtros: urAcquirerFilter e
+  // urBrandFilter guardam rótulos legíveis (nome da credenciadora, descrição
+  // do arranjo), enquanto a CERC exige CNPJ e código.
+  const contextoTrava: ContextoTrava | undefined = useMemo(() => {
+    if (!selectedClient) return undefined;
+    const distintos = (valores: string[]) => Array.from(new Set(valores.filter(Boolean))).sort();
+    const credenciadoras = distintos(filteredClientURs.map(ur => ur.cnpjCredenciadora));
+    const arranjos = distintos(filteredClientURs.map(ur => ur.codigoArranjo));
+    const ufrs = distintos(filteredClientURs.map(ur => ur.documentoUsuarioFinalRecebedor));
+    const datas = filteredClientURs.map(ur => ur.settlementDate).sort();
+    return {
+      documentoContratante: selectedClient.document,
+      documentoUsuarioFinalRecebedor: ufrs.length === 1 ? ufrs[0] : undefined,
+      listaCnpjCredenciadora: credenciadoras.length <= LIMITE_LISTA_CONTEXTO ? credenciadoras : undefined,
+      listaCodigoArranjoPagamento: arranjos.length <= LIMITE_LISTA_CONTEXTO ? arranjos : undefined,
+      dataInicio: datas[0],
+      dataFim: datas[datas.length - 1],
+    };
+  }, [selectedClient, filteredClientURs]);
 
   const toggleUrSettlementSort = () => {
     setUrSettlementSort((prev) => (prev === 'asc' ? 'desc' : prev === 'desc' ? null : 'asc'));
@@ -1003,7 +1027,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
           onSelect={(op) => {
             setShowOperationSelector(false);
             if (op === 'recovery') setIsCreditRecoveryOpen(true);
-            else if (op === 'guarantees') setIsGuaranteesOpen(true);
+            else if (op === 'guarantees') setIsCercGarantiaOpen(true);
             else if (op === 'prepayment') setIsPrepaymentOpen(true);
             else if (op === 'anticipation') setIsAntecipationOpen(true);
             else if (op === 'ownershipTransfer') setIsOwnershipTransferOpen(true);
@@ -1013,7 +1037,12 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
       )}
 
       <CreditRecoveryJourney isOpen={isCreditRecoveryOpen} onClose={() => setIsCreditRecoveryOpen(false)} initialClient={selectedClient} />
-      <GuaranteesJourney isOpen={isGuaranteesOpen} onClose={() => setIsGuaranteesOpen(false)} initialClient={selectedClient} />
+      <CercGarantiaJourney
+        isOpen={isCercGarantiaOpen}
+        onClose={() => setIsCercGarantiaOpen(false)}
+        onCreated={() => setIsCercGarantiaOpen(false)}
+        contexto={contextoTrava}
+      />
       <PrepaymentJourney isOpen={isPrepaymentOpen} onClose={() => setIsPrepaymentOpen(false)} initialClient={selectedClient} />
       <AntecipationJourney isOpen={isAntecipationOpen} onClose={() => setIsAntecipationOpen(false)} initialClient={selectedClient} />
       <OwnershipTransferJourney isOpen={isOwnershipTransferOpen} onClose={() => setIsOwnershipTransferOpen(false)} initialClient={selectedClient} />
@@ -1048,7 +1077,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
           onSelect={(op) => {
             setShowOperationSelector(false);
             if (op === 'recovery') setIsCreditRecoveryOpen(true);
-            else if (op === 'guarantees') setIsGuaranteesOpen(true);
+            else if (op === 'guarantees') setIsCercGarantiaOpen(true);
             else if (op === 'prepayment') setIsPrepaymentOpen(true);
             else if (op === 'anticipation') setIsAntecipationOpen(true);
             else if (op === 'ownershipTransfer') setIsOwnershipTransferOpen(true);
@@ -1058,7 +1087,11 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
       )}
 
       <CreditRecoveryJourney isOpen={isCreditRecoveryOpen} onClose={() => setIsCreditRecoveryOpen(false)} />
-      <GuaranteesJourney isOpen={isGuaranteesOpen} onClose={() => setIsGuaranteesOpen(false)} />
+      <CercGarantiaJourney
+        isOpen={isCercGarantiaOpen}
+        onClose={() => setIsCercGarantiaOpen(false)}
+        onCreated={() => setIsCercGarantiaOpen(false)}
+      />
       <PrepaymentJourney isOpen={isPrepaymentOpen} onClose={() => setIsPrepaymentOpen(false)} />
       <AntecipationJourney isOpen={isAntecipationOpen} onClose={() => setIsAntecipationOpen(false)} />
       <OwnershipTransferJourney isOpen={isOwnershipTransferOpen} onClose={() => setIsOwnershipTransferOpen(false)} />
