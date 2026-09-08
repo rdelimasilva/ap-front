@@ -35,7 +35,7 @@
 | `contratos/apps/contratos/contrato_repository.py` (modificar) | `documento_contratante` na listagem; `listar_eventos_do_contrato` |
 | `contratos/apps/contratos/views.py` (modificar) | Filtro na `listar_contratos`; view `eventos_contrato` |
 | `contratos/apps/contratos/urls.py` (modificar) | Rota de eventos |
-| `contratos/sql/schema/03-contrato-indices-contratante.sql` (criar) | Índice `(cnpj_participante, documento_contratante)` |
+| `contratos/sql/schema/03-contrato-indices-contratante.sql` (criar) | Índice `(documento_contratante, enviado_em DESC)` |
 | `contratos/apps/contratos/tests/test_views_eventos_contrato.py` (criar) | Testes do endpoint de eventos |
 
 ### `ap-front`
@@ -384,7 +384,13 @@ Crie `contratos/sql/schema/03-contrato-indices-contratante.sql`:
 -- contratos dentro da ficha de um cliente). Sem este índice a consulta vira
 -- scan da tabela inteira do tenant: os índices existentes são
 -- (cnpj_participante, status) e (status), nenhum cobre o contratante.
-CREATE INDEX ON contrato (cnpj_participante, documento_contratante);
+-- Liderar por cnpj_participante não serviria: listar_contratos_do_financiador
+-- nunca filtra por essa coluna — o isolamento de tenant é por banco separado
+-- (get_db(financiador_id)), não por coluna, e um índice composto só é
+-- eficiente com igualdade na coluna líder. Liderando por documento_contratante
+-- e incluindo enviado_em DESC, o índice serve o filtro e a ordenação
+-- "mais recente primeiro" na mesma passada.
+CREATE INDEX ON contrato (documento_contratante, enviado_em DESC);
 ```
 
 - [ ] **Step 7: Aplicar o índice**

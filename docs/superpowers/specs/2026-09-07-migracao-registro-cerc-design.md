@@ -67,8 +67,10 @@ Esta spec move a jornada para esses dois pontos e retira o item do menu.
 Índice de suporte em `sql/schema/` — hoje só existem `(cnpj_participante, status)` e `(status)`:
 
 ```sql
-CREATE INDEX ON contrato (cnpj_participante, documento_contratante);
+CREATE INDEX ON contrato (documento_contratante, enviado_em DESC);
 ```
+
+Liderar o índice por `cnpj_participante` não serviria: `listar_contratos_do_financiador` nunca filtra por essa coluna, porque o isolamento de tenant neste serviço acontece por banco separado (`get_db(financiador_id)`), não por coluna. Um índice composto só permite busca eficiente quando há predicado de igualdade na coluna líder; sem ele, a consulta varreria o índice inteiro, o mesmo custo que ele deveria evitar. Liderando por `documento_contratante` — a coluna do filtro novo — e incluindo `enviado_em DESC`, o índice serve o filtro e a ordenação da mesma consulta numa passada só.
 
 ### 3.2 Endpoint de eventos
 
@@ -294,3 +296,38 @@ Isso já é conhecido do time: está registrado em `ap-back-contratos/contratos/
 Esta spec não fecha essa lacuna porque ela precede o trabalho aqui descrito e tem decisão própria a tomar (rotação de chave, tratamento de 401 no front, janela de deploy coordenada entre front e back). O que esta spec faz é parar de aumentá-la: o endpoint novo, que seria o mais sensível dos três, nasce protegido.
 
 Recomendação: tratar como item próprio logo em seguida.
+
+---
+
+## 11. Verificado em 2026-09-08
+
+A verificação de ponta a ponta prevista na Task 11 exige navegador e um webhook real da CERC, e não pôde ser executada nesta sessão. O que segue é o que foi confirmado por execução, o que não pôde ser, e o que fica pendente.
+
+### Confirmado por execução
+
+- `ap-back-contratos`: `shared/tests/test_jwt_auth.py` passa 10 de 10, sem depender de banco. Cobre validação de token, expiração, emissor errado, claim `financiador_id` ausente ou malformado, resposta 503 quando falta configuração de JWT (nas duas variáveis), e a garantia de que header ausente continua 401 e não 503.
+- `ap-back-contratos`: os dois testes de segurança do endpoint de eventos passam sem tocar banco — sem JWT devolve 401, e JWT com `financiador_id` divergente do da URL devolve 403. A recusa acontece antes de qualquer acesso a dados.
+- `ap-front`: `npx tsc --noEmit -p tsconfig.app.json` fecha em 99 erros pré-existentes, nenhum novo em arquivo tocado pela migração. O baseline caiu de 102 para 99: três erros `TS2339` reais foram corrigidos (`client.cnpj` e `client.segment`, campos que não existem no tipo `Client`).
+- `ap-front`: `npm run build` conclui com sucesso. O único aviso é sobre tamanho de chunk, pré-existente.
+
+### Não pôde ser verificado, e por quê
+
+- Todos os testes do `ap-back-contratos` que tocam Cloud SQL falham nesta máquina com `403 boss::NOT_AUTHORIZED: missing permission cloudsql.instances.get on instances/contratos-db`, no projeto `registradora-506000`. A conta disponível não tem acesso a essa instância. Isso inclui os testes do filtro por contratante, os da timeline de eventos, e os do endpoint que devolve a timeline em camelCase.
+- `test_contrato_inexistente_devolve_404` ficou deliberadamente vermelho: passou a assertar o corpo da resposta, e não só o código. Antes, o teste passava pelo caminho errado — colhia o 404 de uma falha de conexão, sem exercitar o tratamento de contrato inexistente. Ele só fica verde com acesso ao Cloud SQL; essa falha é o comportamento correto de um teste que não consegue provar o que promete.
+- Nenhum fluxo foi exercitado em navegador. O front não tem suíte automatizada, e esta migração não introduziu uma.
+- O endpoint de eventos não foi exercitado contra o serviço em execução: existe apenas no código, sem deploy, e as variáveis de JWT não foram configuradas no Cloud Run.
+
+### Pendências para o usuário
+
+1. Aplicar o índice: rodar `python scripts/apply_schema.py` a partir de `C:\DEV\ap\ap-back-contratos\contratos`, o que aplica `sql/schema/03-contrato-indices-contratante.sql`. Não foi executado nesta sessão por ser DDL contra banco compartilhado.
+2. Configurar `IAM_JWT_PUBLIC_KEY` (do Secret Manager, segredo que já existe no projeto) e `IAM_JWT_ISSUER=brikz-iam` no serviço Cloud Run do contratos. Sem isso, a aba de Histórico responde 503 `SERVICO_MAL_CONFIGURADO`.
+3. Rodar a suíte do `ap-back-contratos` numa conta com acesso ao projeto `registradora-506000`, para validar os testes bloqueados aqui.
+4. Percorrer o roteiro manual de 7 passos da §8.
+5. Regenerar o token de desenvolvimento quando expirar, em 2026-10-07, com o comando documentado nesta spec.
+
+### Duas questões de segurança anteriores a esta migração, ainda abertas
+
+Nenhuma das duas foi introduzida por este trabalho, e nenhuma foi corrigida por ele.
+
+- **`DEBUG=True` ativo em produção nos dois serviços.** `config/settings.py` calcula `DEBUG = ENVIRONMENT != "production"`, e o `cloudbuild.yaml` fixa `_ENVIRONMENT: homolog`. Verificado contra os serviços reais: uma rota inexistente devolve a página de debug do Django, que lista as rotas configuradas; um erro 500 entregaria stack trace, código-fonte e variáveis locais. A correção é de uma linha por serviço.
+- **As rotas de leitura de contratos continuam sem autenticação**, conforme §10. O que mudou nesta migração é que o módulo de JWT agora existe no repositório e o front já envia Bearer em todas as chamadas — fechar essa lacuna passou a ser acrescentar um decorador e a checagem de tenant por rota, mais os testes correspondentes.
