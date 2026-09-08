@@ -14,6 +14,7 @@ import { showToast } from '../hooks/useToast';
 import { listAgendaUrs, getPagamentosUr, getTotaisUrs, type AgendaUrDTO, type PagamentoUrDTO, type TotaisUrsResposta } from '../services/agendaApi';
 import { ARRANJOS_CERC } from '../data/arranjosCerc';
 import { CREDENCIADORAS_CERC } from '../data/credenciadorasCerc';
+import { LIMITE_LISTA_CONTEXTO } from '../utils/contratoCerc';
 
 interface ScheduleViewProps {
   clients: Client[];
@@ -426,10 +427,6 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
       const cmp = a.settlementDate.localeCompare(b.settlementDate);
       return urSettlementSort === 'asc' ? cmp : -cmp;
     });
-
-  // Acima disto a lista deixa de ser um recorte útil e o formulário cai para
-  // a sentinela "todas" (99T) — ver NewContratoModal e spec §9.
-  const LIMITE_LISTA_CONTEXTO = 10;
 
   // O contexto sai das URs, e não do estado dos filtros: urAcquirerFilter e
   // urBrandFilter guardam rótulos legíveis (nome da credenciadora, descrição

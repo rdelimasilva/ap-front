@@ -12,6 +12,7 @@ import {
   type EventoContratoDTO,
 } from '../services/contratosApi';
 import { ConfirmDialog } from './ConfirmDialog';
+import { classeBadgeStatus, formatarData, formatarValor, rotuloStatus } from '../utils/contratoCerc';
 
 interface ContratoDetailModalProps {
   contratoId: string | null;
@@ -24,7 +25,29 @@ const EVENTO_LABEL: Record<string, string> = {
   rejeicao_estrutural: 'Rejeitado pela CERC',
   ContratoSubgarantido: 'Contrato subgarantido',
   requisicao_cerc: 'Requisição à CERC',
+  // Gravados por _operacao_pos_registro no backend, com o tipo da operação
+  // sufixado (apps/contratos/views.py).
+  operacao_pos_registro_I: 'Inativação submetida à CERC',
+  operacao_pos_registro_B: 'Baixa submetida à CERC',
 };
+
+// Dois cuidados que a concatenação ingênua não tem. Quando o corpo do backend
+// traz só `erro` e nenhuma `mensagem`, contratosApi preenche código e texto com
+// a MESMA string, e "código: mensagem" saía repetido ("contrato não encontrado:
+// contrato não encontrado"). E um erro de texto vazio precisa de fallback: o
+// guarda do efeito de busca não repete a tentativa e o render trata '' como
+// falso, então a aba ficaria em branco para sempre naquele contrato — sem
+// mensagem e sem o botão de tentar de novo.
+function textoDeErroDeEventos(err: unknown): string {
+  if (err instanceof ContratosApiError) {
+    const codigo = err.codigo.trim();
+    const mensagem = err.message.trim();
+    if (codigo && mensagem && codigo !== mensagem) return `${codigo}: ${mensagem}`;
+    return codigo || mensagem || 'erro desconhecido';
+  }
+  if (err instanceof Error && err.message.trim()) return err.message;
+  return 'erro desconhecido';
+}
 
 function formatarDataHora(iso: string): string {
   const data = new Date(iso);
@@ -42,20 +65,6 @@ function errosDoEvento(evento: EventoContratoDTO): string[] {
   const payload = evento.payload as { erros?: Array<{ codigo?: string; mensagem?: string }> } | null;
   if (!Array.isArray(payload?.erros)) return [];
   return payload.erros.map(e => [e.codigo, e.mensagem].filter(Boolean).join(' — '));
-}
-
-function formatarData(iso: string | null): string {
-  if (!iso) return '—';
-  // Datas "só data" (YYYY-MM-DD, sem T) são interpretadas como UTC pelo
-  // Date nativo — em fusos negativos (ex.: America/Sao_Paulo) isso exibia
-  // um dia a menos. Forçar meia-noite local quando não há componente de hora.
-  const data = iso.includes('T') ? new Date(iso) : new Date(`${iso}T00:00:00`);
-  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(data);
-}
-
-function formatarValor(v: number | null): string {
-  if (v === null) return '—';
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 }
 
 export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contratoId, onClose, onChanged }) => {
@@ -109,13 +118,7 @@ export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contra
         const dados = await getEventosContrato(contratoId);
         if (!cancelado) setEventos(dados);
       } catch (err) {
-        if (!cancelado) {
-          setErroEventos(
-            err instanceof ContratosApiError
-              ? `${err.codigo}: ${err.message}`
-              : err instanceof Error ? err.message : 'erro desconhecido',
-          );
-        }
+        if (!cancelado) setErroEventos(textoDeErroDeEventos(err));
       } finally {
         if (!cancelado) setCarregandoEventos(false);
       }
@@ -157,6 +160,12 @@ export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contra
         : await baixarContrato(contrato.referenciaExterna);
       showToast('success', tipo === 'inativar' ? 'Inativação submetida' : 'Baixa submetida', `Status: ${resultado.status}`);
       onChanged();
+      // A operação acabou de gravar um evento (operacao_pos_registro_I/B). O
+      // efeito da aba só busca quando eventos está nulo, então sem invalidar
+      // aqui a timeline carregada antes da operação continuaria em cache e o
+      // evento novo só apareceria ao fechar e reabrir o modal.
+      setEventos(null);
+      setErroEventos(null);
       await carregar(contrato.id);
     } catch (err) {
       if (err instanceof ContratosApiError) {
@@ -210,7 +219,7 @@ export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contra
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div><p className="text-gray-500">Referência externa</p><p className="font-medium text-gray-900">{contrato.referenciaExterna}</p></div>
                     <div><p className="text-gray-500">Identificador</p><p className="font-medium text-gray-900">{contrato.identificadorContrato}</p></div>
-                    <div><p className="text-gray-500">Status</p><p className="font-medium text-gray-900">{contrato.status}</p></div>
+                    <div><p className="text-gray-500">Status</p><p><span className={classeBadgeStatus(contrato.status)}>{rotuloStatus(contrato.status)}</span></p></div>
                     <div><p className="text-gray-500">Protocolo CERC</p><p className="font-medium text-gray-900">{contrato.protocolo ?? '—'}</p></div>
                     <div><p className="text-gray-500">Saldo devedor</p><p className="font-medium text-gray-900">{formatarValor(contrato.saldoDevedor)}</p></div>
                     <div><p className="text-gray-500">Vencimento</p><p className="font-medium text-gray-900">{formatarData(contrato.dataVencimento)}</p></div>

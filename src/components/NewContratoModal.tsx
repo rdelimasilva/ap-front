@@ -9,6 +9,7 @@ import {
   type GarantiaPayload,
 } from '../services/contratosApi';
 import { validarPayloadContrato, type ErrosPorCampo } from '../utils/contratoValidation';
+import { LIMITE_LISTA_CONTEXTO } from '../utils/contratoCerc';
 
 // Semeia o formulário a partir de onde o usuário veio (radar de URs de um
 // cliente, ou a ficha do cliente). Todo campo semeado continua editável.
@@ -81,8 +82,12 @@ const ESTADO_INICIAL: FormState = {
 };
 
 // Só os campos que a origem (radar de URs ou ficha do cliente) sabe de
-// antemão; saldoDevedor/limiteOperacaoGarantida/valorMantido/valorAOnerar
-// ficam de fora de propósito — ver nota no useEffect de abertura.
+// antemão. saldoDevedor, limiteOperacaoGarantida, valorMantido e valorAOnerar
+// ficam de fora por decisão de produto, não por esquecimento: derivar o valor
+// de uma trava a partir de um filtro visual (o recorte de URs que o usuário
+// tinha na tela) onera recebíveis que ele não escolheu onerar. Esses quatro
+// valores vêm do contrato de crédito e são digitados; quem for "melhorar" o
+// pré-preenchimento precisa ler isto antes.
 function comContexto(contexto?: ContextoTrava): FormState {
   if (!contexto) return ESTADO_INICIAL;
   return {
@@ -211,10 +216,6 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
   const [bannerErro, setBannerErro] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Acima disto a lista deixa de ser um recorte útil e vira ruído: cai para a
-  // sentinela "todas" (99T), que é o que o formulário já envia nesse caso.
-  const LIMITE_LISTA = 10;
-
   // "Última versão" de contextoInicial sem entrar no array de dependências do
   // efeito abaixo. Consumidores (ex.: a ficha do cliente) passam esse contexto
   // como objeto literal inline, recriado a cada render do pai; se o efeito
@@ -242,7 +243,7 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
       setTodos: (v: boolean) => void,
       setRaw: (v: string) => void,
     ) => {
-      if (!valores || valores.length === 0 || valores.length > LIMITE_LISTA) {
+      if (!valores || valores.length === 0 || valores.length > LIMITE_LISTA_CONTEXTO) {
         setTodos(true);
         setRaw('');
         return;

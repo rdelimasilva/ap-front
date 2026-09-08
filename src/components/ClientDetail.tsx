@@ -469,7 +469,10 @@ export const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack }) =>
                 <Plus className="w-4 h-4" /> Novo contrato CERC
               </button>
             )}
-            <button onClick={() => toggleSection('cerc-contracts')} aria-label="Expandir seção">
+            <button
+              onClick={() => toggleSection('cerc-contracts')}
+              aria-label={collapsedSections.has('cerc-contracts') ? 'Expandir seção' : 'Recolher seção'}
+            >
               {collapsedSections.has('cerc-contracts') ? (
                 <ChevronRight className="w-5 h-5 text-gray-400" />
               ) : (
