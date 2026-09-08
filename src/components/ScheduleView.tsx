@@ -1151,12 +1151,11 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
                       </div>
                       <div className="ml-4">
                         <div className="text-sm font-medium text-gray-900">{client.name}</div>
-                        <div className="text-sm text-gray-500">{client.segment}</div>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{client.cnpj}</div>
+                    <div className="text-sm text-gray-900">{client.document}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${
@@ -1197,7 +1196,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
                           setSelectedOptInClient({
                             id: client.id,
                             client_name: client.name,
-                            client_document: client.cnpj,
+                            client_document: client.document,
                             client_email: 'contato@empresa.com.br',
                             client_phone: '(11) 99999-9999',
                             client_address: 'Av. Paulista, 1000 - São Paulo, SP',
