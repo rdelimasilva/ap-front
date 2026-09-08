@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Ban, ArrowDownCircle } from 'lucide-react';
 import { showToast } from '../hooks/useToast';
@@ -27,15 +27,20 @@ const EVENTO_LABEL: Record<string, string> = {
 };
 
 function formatarDataHora(iso: string): string {
-  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
+  const data = new Date(iso);
+  // payload de evento é sempre semiestruturado (vem de webhook/JSON externo);
+  // uma data ausente ou malformada não pode derrubar o modal inteiro.
+  if (Number.isNaN(data.getTime())) return '—';
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(data);
 }
 
 // A rejeição estrutural é o único evento cujo payload interessa em texto: são
 // os códigos que a CERC devolveu, hoje visíveis só no toast do momento da
-// submissão.
+// submissão. payload é `unknown` (vem direto do banco) — erros pode não ser
+// array se o formato mudar do lado do backend.
 function errosDoEvento(evento: EventoContratoDTO): string[] {
   const payload = evento.payload as { erros?: Array<{ codigo?: string; mensagem?: string }> } | null;
-  if (!payload?.erros) return [];
+  if (!Array.isArray(payload?.erros)) return [];
   return payload.erros.map(e => [e.codigo, e.mensagem].filter(Boolean).join(' — '));
 }
 
@@ -63,47 +68,62 @@ export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contra
   const [erroEventos, setErroEventos] = useState<string | null>(null);
   const [carregandoEventos, setCarregandoEventos] = useState(false);
 
-  // O modal não desmonta ao trocar de contrato (a instância é única em
-  // ContratosCercModule, só o contratoId muda) — uma resposta que chega depois
-  // da troca precisa ser descartada, senão a timeline (com dados bancários do
-  // domicílio) do contrato anterior aparece atribuída ao contrato atual.
-  const contratoIdRef = useRef(contratoId);
-  useEffect(() => {
-    contratoIdRef.current = contratoId;
-  }, [contratoId]);
-
-  const carregarEventos = useCallback(async () => {
-    if (!contratoId) return;
-    setCarregandoEventos(true);
-    setErroEventos(null);
-    try {
-      const dados = await getEventosContrato(contratoId);
-      if (contratoIdRef.current !== contratoId) return;
-      setEventos(dados);
-    } catch (err) {
-      if (contratoIdRef.current !== contratoId) return;
-      setErroEventos(err instanceof Error ? err.message : 'erro desconhecido');
-    } finally {
-      if (contratoIdRef.current === contratoId) setCarregandoEventos(false);
-    }
-  }, [contratoId]);
-
-  // Só busca quando o usuário abre a aba: a maioria das visitas ao modal quer
-  // o detalhe, e a timeline traz request/response inteiros.
-  useEffect(() => {
-    if (aba === 'historico' && eventos === null && !carregandoEventos) carregarEventos();
-  }, [aba, eventos, carregandoEventos, carregarEventos]);
-
-  // Contrato diferente, timeline diferente. Também zera carregandoEventos:
-  // sem isso, uma busca do contrato anterior ainda em voo (e agora descartada
-  // pelo guard acima) nunca chegaria a liberar a flag, e a aba do novo
-  // contrato ficaria travada em "Carregando...".
-  useEffect(() => {
+  // Contrato diferente, timeline diferente. Feito durante a renderização (não
+  // em efeito) porque o modal não desmonta ao trocar de contrato — é a mesma
+  // instância em ContratosCercModule, só contratoId muda. Um efeito de reset
+  // deixaria, entre o commit da nova prop e a passagem do próprio efeito, uma
+  // renderização em que o efeito de busca abaixo veria contratoId novo com
+  // aba/eventos ainda do contrato anterior (podendo iniciar uma busca não
+  // pedida pelo usuário). Ajustar aqui garante que, quando o efeito de busca
+  // rodar, o estado já está coerente com o contratoId atual.
+  const [contratoIdCarregado, setContratoIdCarregado] = useState(contratoId);
+  if (contratoId !== contratoIdCarregado) {
+    setContratoIdCarregado(contratoId);
     setAba('detalhe');
     setEventos(null);
     setErroEventos(null);
     setCarregandoEventos(false);
-  }, [contratoId]);
+  }
+
+  // Só busca quando o usuário abre a aba (a maioria das visitas ao modal quer
+  // o detalhe, e a timeline traz request/response inteiros) e só uma vez por
+  // contrato: eventos/erroEventos não nulos significam que já houve uma
+  // tentativa, e só "Tentar de novo" (que zera erroEventos) deve repeti-la.
+  // Sem essa segunda condição, uma falha reabre a mesma corrida: eventos
+  // continua null, o finally devolve carregandoEventos a false, e — se ele
+  // estivesse nas dependências — o efeito dispararia de novo indefinidamente.
+  //
+  // O cancelamento segue o mesmo padrão de ContratosCercList.tsx: a flag
+  // `cancelado` é local a cada execução do efeito, então uma resposta tardia
+  // só pode afetar o fechamento que a originou. Trocar de contrato (ou de
+  // aba) muda as dependências e aciona o cleanup dessa execução específica
+  // antes de qualquer nova busca começar — não há estado compartilhado entre
+  // execuções para uma delas sobrescrever por engano.
+  useEffect(() => {
+    if (!contratoId || aba !== 'historico' || eventos !== null || erroEventos !== null) return;
+    let cancelado = false;
+    const buscar = async () => {
+      setCarregandoEventos(true);
+      try {
+        const dados = await getEventosContrato(contratoId);
+        if (!cancelado) setEventos(dados);
+      } catch (err) {
+        if (!cancelado) {
+          setErroEventos(
+            err instanceof ContratosApiError
+              ? `${err.codigo}: ${err.message}`
+              : err instanceof Error ? err.message : 'erro desconhecido',
+          );
+        }
+      } finally {
+        if (!cancelado) setCarregandoEventos(false);
+      }
+    };
+    buscar();
+    return () => { cancelado = true; };
+  }, [contratoId, aba, eventos, erroEventos]);
+
+  const tentarNovamenteEventos = () => setErroEventos(null);
 
   const carregar = async (id: string) => {
     setIsLoading(true);
@@ -160,27 +180,30 @@ export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contra
           </button>
         </div>
 
-        <div className="flex gap-1 border-b border-gray-200 mt-3">
-          {([['detalhe', 'Detalhe'], ['historico', 'Histórico']] as const).map(([chave, rotulo]) => (
-            <button
-              key={chave}
-              onClick={() => setAba(chave)}
-              className={`px-4 py-2 text-sm -mb-px border-b-2 transition-colors ${
-                aba === chave
-                  ? 'border-emerald-600 text-emerald-700 font-medium'
-                  : 'border-transparent text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              {rotulo}
-            </button>
-          ))}
-        </div>
-
         <div className="p-6 space-y-6">
           {isLoading && <p className="text-center text-gray-400 py-8">Carregando...</p>}
 
           {!isLoading && contrato && (
             <>
+              {/* Dentro do mesmo gate do isLoading: antes do contrato carregar não há
+                  o que exibir em nenhuma aba, e clicar em Histórico cedo demais não
+                  pode disparar a busca de eventos contra um corpo vazio. */}
+              <div className="flex gap-1 border-b border-gray-200 -mt-2">
+                {([['detalhe', 'Detalhe'], ['historico', 'Histórico']] as const).map(([chave, rotulo]) => (
+                  <button
+                    key={chave}
+                    onClick={() => setAba(chave)}
+                    className={`px-4 py-2 text-sm -mb-px border-b-2 transition-colors ${
+                      aba === chave
+                        ? 'border-emerald-600 text-emerald-700 font-medium'
+                        : 'border-transparent text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
+
               {aba === 'detalhe' && (
                 <>
                   <div className="grid grid-cols-2 gap-4 text-sm">
@@ -254,7 +277,7 @@ export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contra
                   {erroEventos && (
                     <div className="text-sm">
                       <p className="text-red-600">Falha ao carregar o histórico: {erroEventos}</p>
-                      <button onClick={carregarEventos} className="mt-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200">
+                      <button onClick={tentarNovamenteEventos} className="mt-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200">
                         Tentar de novo
                       </button>
                     </div>
