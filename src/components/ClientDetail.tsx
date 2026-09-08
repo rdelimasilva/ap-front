@@ -5,6 +5,9 @@ import { ContractDetail } from './ContractDetail';
 import { HistoricalValuesTable } from './HistoricalValuesTable';
 import { Breadcrumb } from './Breadcrumb';
 import { EditClientModal } from './EditClientModal';
+import { ContratosCercList } from './ContratosCercList';
+import { CercGarantiaJourney } from './CercGarantiaJourney';
+import { ContratoDetailModal } from './ContratoDetailModal';
 import { useData } from '../context/DataContext';
 import {
   DollarSign,
@@ -23,7 +26,9 @@ import {
   Edit,
   ChevronDown,
   ChevronRight,
-  Info
+  Info,
+  FileSignature,
+  Plus
 } from 'lucide-react';
 
 interface ClientDetailProps {
@@ -37,6 +42,9 @@ export const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack }) =>
   const [showEditClientModal, setShowEditClientModal] = React.useState(false);
   const [collapsedSections, setCollapsedSections] = React.useState<Set<string>>(new Set(['client-info']));
   const contractsSectionRef = React.useRef<HTMLDivElement>(null);
+  const [isCercJourneyOpen, setIsCercJourneyOpen] = React.useState(false);
+  const [contratoCercSelecionado, setContratoCercSelecionado] = React.useState<string | null>(null);
+  const [recarregarContratosCerc, setRecarregarContratosCerc] = React.useState(0);
 
   const toggleSection = (sectionId: string) => {
     setCollapsedSections((prev) => {
@@ -443,6 +451,41 @@ export const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack }) =>
         )}
       </div>
 
+      {/* Contratos CERC */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors">
+          <button onClick={() => toggleSection('cerc-contracts')} className="flex items-center gap-3 text-left flex-1">
+            <FileSignature className="w-5 h-5 text-emerald-600" />
+            <h3 className="text-lg font-semibold text-gray-900">Contratos CERC</h3>
+          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsCercJourneyOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm"
+            >
+              <Plus className="w-4 h-4" /> Novo contrato CERC
+            </button>
+            <button onClick={() => toggleSection('cerc-contracts')} aria-label="Expandir seção">
+              {collapsedSections.has('cerc-contracts') ? (
+                <ChevronRight className="w-5 h-5 text-gray-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-400" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {!collapsedSections.has('cerc-contracts') && (
+          <div className="p-4 border-t border-gray-100">
+            <ContratosCercList
+              documentoContratante={client.document}
+              onSelecionarContrato={setContratoCercSelecionado}
+              recarregarToken={recarregarContratosCerc}
+            />
+          </div>
+        )}
+      </div>
+
       {/* Historical Values Section */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <button
@@ -479,6 +522,22 @@ export const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack }) =>
         onClose={() => setShowEditClientModal(false)}
         client={client}
         onSave={updateClient}
+      />
+
+      <CercGarantiaJourney
+        isOpen={isCercJourneyOpen}
+        onClose={() => setIsCercJourneyOpen(false)}
+        onCreated={() => {
+          setIsCercJourneyOpen(false);
+          setRecarregarContratosCerc(n => n + 1);
+        }}
+        contexto={{ documentoContratante: client.document }}
+      />
+
+      <ContratoDetailModal
+        contratoId={contratoCercSelecionado}
+        onClose={() => setContratoCercSelecionado(null)}
+        onChanged={() => setRecarregarContratosCerc(n => n + 1)}
       />
     </div>
   );

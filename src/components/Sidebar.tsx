@@ -9,7 +9,6 @@ import {
   FileText,
   CalendarDays,
   FolderOpen,
-  FileSignature,
   ClipboardCheck,
   UserPlus,
   Settings,
@@ -101,7 +100,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeSection, setActiveSectio
     { id: 'partner-registration', label: 'Cadastro', icon: UserPlus },
     { id: 'schedule-view', label: 'Agendas', icon: CalendarDays },
     { id: 'contracts', label: 'Contratos', icon: FolderOpen },
-    { id: 'contratos-cerc', label: 'Registro CERC', icon: FileSignature },
   ];
 
   // Mini-icon items — ACOMPANHAMENTO
@@ -283,7 +281,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeSection, setActiveSectio
             {renderSimple('partner-registration', UserPlus, 'Cadastro')}
             {renderSimple('schedule-view', CalendarDays, 'Agendas')}
             {renderSimple('contracts', FolderOpen, 'Contratos')}
-            {renderSimple('contratos-cerc', FileSignature, 'Registro CERC')}
           </div>
 
           {/* ACOMPANHAMENTO section — oculta temporariamente */}
