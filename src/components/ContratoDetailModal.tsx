@@ -309,7 +309,11 @@ export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contra
                           <summary className="text-xs text-gray-500 cursor-pointer">Detalhe técnico</summary>
                           {evento.requisicoes.map((r, k) => (
                             <div key={k} className="mt-2 text-xs">
-                              <p className="text-gray-600">{r.recurso} — HTTP {r.httpStatus ?? 'sem resposta'} (tentativa {r.tentativa})</p>
+                              {/* O correlacaoId entra aqui porque `recurso` é o mesmo
+                                  caminho nas três operações: a criação manda a referência
+                                  externa crua, a inativação a mesma referência com sufixo
+                                  ":I" e a baixa com ":B". */}
+                              <p className="text-gray-600">{r.recurso} — HTTP {r.httpStatus ?? 'sem resposta'} (tentativa {r.tentativa}) — {r.correlacaoId}</p>
                               <pre className="bg-gray-50 p-2 rounded overflow-x-auto">{JSON.stringify(r.requestBody, null, 2)}</pre>
                               <pre className="bg-gray-50 p-2 rounded overflow-x-auto">{JSON.stringify(r.responseBody, null, 2)}</pre>
                             </div>

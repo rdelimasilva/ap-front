@@ -142,6 +142,10 @@ export interface OperacaoPosRegistroResultado {
 
 export interface RequisicaoCercDTO {
   recurso: string;
+  // Não anulável, ao contrário de httpStatus: correlacao_id é TEXT NOT NULL
+  // (sql/schema/01-contratos-schema.sql) e o client HTTP da CERC o grava em
+  // toda tentativa, inclusive na que não obteve resposta.
+  correlacaoId: string;
   httpStatus: number | null;
   tentativa: number;
   requestBody: unknown;
