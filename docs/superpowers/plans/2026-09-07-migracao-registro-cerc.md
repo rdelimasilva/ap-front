@@ -395,9 +395,11 @@ CREATE INDEX ON contrato (documento_contratante, enviado_em DESC);
 
 - [ ] **Step 7: Aplicar o índice**
 
-Run: `cd C:\DEV\ap\ap-back-contratos\contratos && python scripts/apply_schema.py`
+Run: `cd C:\DEV\ap\ap-back-contratos\contratos && python scripts/apply_schema.py sql/schema/03-contrato-indices-contratante.sql`
 
-O script controla o que já foi aplicado pela tabela `schema_aplicado`, então rodá-lo de novo é seguro. Confirme na saída que `03-contrato-indices-contratante.sql` aparece como aplicado.
+O arquivo é argumento obrigatório: sem ele o script imprime o uso e sai com código 1.
+
+O script controla o que já foi aplicado pela tabela `schema_aplicado`, chaveada pela string do caminho **exatamente como foi passada** no comando — rodar de novo com este mesmo caminho relativo é no-op seguro; rodar com o caminho escrito de outra forma (absoluto, ou com barras invertidas) não casa o registro anterior e reexecuta o arquivo. O `CREATE INDEX` dele não tem nome nem `IF NOT EXISTS`, então isso não falha: cria um segundo índice idêntico. Confirme na saída que `03-contrato-indices-contratante.sql` aparece como aplicado.
 
 - [ ] **Step 8: Commit**
 

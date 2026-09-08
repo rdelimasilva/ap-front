@@ -319,7 +319,7 @@ A verificação de ponta a ponta prevista na Task 11 exige navegador e um webhoo
 
 ### Pendências para o usuário
 
-1. Aplicar o índice: rodar `python scripts/apply_schema.py` a partir de `C:\DEV\ap\ap-back-contratos\contratos`, o que aplica `sql/schema/03-contrato-indices-contratante.sql`. Não foi executado nesta sessão por ser DDL contra banco compartilhado.
+1. Aplicar o índice: a partir de `C:\DEV\ap\ap-back-contratos\contratos`, rodar `python scripts/apply_schema.py sql/schema/03-contrato-indices-contratante.sql`. O arquivo é argumento obrigatório — sem ele o script imprime o uso e sai com código 1. Não foi executado nesta sessão por ser DDL contra banco compartilhado. **Armadilha do caminho:** o controle de "já aplicado" (tabela `schema_aplicado`) é chaveado pela string do caminho exatamente como foi passada no comando. Rodar de novo com o caminho escrito de outra forma (absoluto, ou com barras invertidas) não casa o registro anterior e reexecuta o arquivo — e o `CREATE INDEX` dele não tem nome nem `IF NOT EXISTS`, então não falha: cria um segundo índice idêntico. Use sempre exatamente o caminho relativo acima.
 2. Configurar `IAM_JWT_PUBLIC_KEY` (do Secret Manager, segredo que já existe no projeto) e `IAM_JWT_ISSUER=brikz-iam` no serviço Cloud Run do contratos. Sem isso, a aba de Histórico responde 503 `SERVICO_MAL_CONFIGURADO`.
 3. Rodar a suíte do `ap-back-contratos` numa conta com acesso ao projeto `registradora-506000`, para validar os testes bloqueados aqui.
 4. Percorrer o roteiro manual de 7 passos da §8.
