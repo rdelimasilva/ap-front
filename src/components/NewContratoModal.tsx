@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { showToast } from '../hooks/useToast';
@@ -215,12 +215,24 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
   // sentinela "todas" (99T), que é o que o formulário já envia nesse caso.
   const LIMITE_LISTA = 10;
 
-  // Reaplica o contexto a cada abertura, para que o formulário nunca traga o
-  // cliente da vez anterior. Vale também para as duas listas, que ficam fora
+  // "Última versão" de contextoInicial sem entrar no array de dependências do
+  // efeito abaixo. Consumidores (ex.: a ficha do cliente) passam esse contexto
+  // como objeto literal inline, recriado a cada render do pai; se o efeito
+  // dependesse da identidade do objeto, qualquer re-render do pai com o modal
+  // já aberto resetaria o formulário e apagaria o que o usuário digitou. Ref
+  // é estável e não participa do array de deps — não precisa de disable.
+  const contextoRef = useRef(contextoInicial);
+  contextoRef.current = contextoInicial;
+
+  // Reage à transição de fechado→aberto, não à identidade de contextoInicial:
+  // lê o contexto vigente pela ref só no instante em que isOpen vira true, e
+  // com o modal já aberto, novas referências da prop não têm mais efeito
+  // algum sobre o formulário. Vale também para as duas listas, que ficam fora
   // do FormState e por isso não são cobertas por comContexto.
   useEffect(() => {
     if (!isOpen) return;
-    setForm(comContexto(contextoInicial));
+    const contexto = contextoRef.current;
+    setForm(comContexto(contexto));
     setParcelas([]);
     setErros({});
     setBannerErro(null);
@@ -239,9 +251,9 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
       setRaw(valores.join(', '));
     };
 
-    semear(contextoInicial?.listaCnpjCredenciadora, setTodasCredenciadoras, setCredenciadorasRaw);
-    semear(contextoInicial?.listaCodigoArranjoPagamento, setTodosArranjos, setArranjosRaw);
-  }, [isOpen, contextoInicial]);
+    semear(contexto?.listaCnpjCredenciadora, setTodasCredenciadoras, setCredenciadorasRaw);
+    semear(contexto?.listaCodigoArranjoPagamento, setTodosArranjos, setArranjosRaw);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
