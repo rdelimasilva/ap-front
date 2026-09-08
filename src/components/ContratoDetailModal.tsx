@@ -69,8 +69,9 @@ export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contra
   const [carregandoEventos, setCarregandoEventos] = useState(false);
 
   // Contrato diferente, timeline diferente. Feito durante a renderização (não
-  // em efeito) porque o modal não desmonta ao trocar de contrato — é a mesma
-  // instância em ContratosCercModule, só contratoId muda. Um efeito de reset
+  // em efeito) porque o modal não desmonta ao trocar de contrato — quem o
+  // monta (hoje, a seção de contratos CERC do ClientDetail) mantém uma única
+  // instância e só troca o contratoId. Um efeito de reset
   // deixaria, entre o commit da nova prop e a passagem do próprio efeito, uma
   // renderização em que o efeito de busca abaixo veria contratoId novo com
   // aba/eventos ainda do contrato anterior (podendo iniciar uma busca não

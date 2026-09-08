@@ -459,12 +459,16 @@ export const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack }) =>
             <h3 className="text-lg font-semibold text-gray-900">Contratos CERC</h3>
           </button>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsCercJourneyOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm"
-            >
-              <Plus className="w-4 h-4" /> Novo contrato CERC
-            </button>
+            {/* Sem documento não há contratante para vincular o registro — some
+                junto com a lista abaixo, não só desabilita. */}
+            {client.document && (
+              <button
+                onClick={() => setIsCercJourneyOpen(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm"
+              >
+                <Plus className="w-4 h-4" /> Novo contrato CERC
+              </button>
+            )}
             <button onClick={() => toggleSection('cerc-contracts')} aria-label="Expandir seção">
               {collapsedSections.has('cerc-contracts') ? (
                 <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -477,11 +481,21 @@ export const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack }) =>
 
         {!collapsedSections.has('cerc-contracts') && (
           <div className="p-4 border-t border-gray-100">
-            <ContratosCercList
-              documentoContratante={client.document}
-              onSelecionarContrato={setContratoCercSelecionado}
-              recarregarToken={recarregarContratosCerc}
-            />
+            {client.document ? (
+              <ContratosCercList
+                documentoContratante={client.document}
+                onSelecionarContrato={setContratoCercSelecionado}
+                recarregarToken={recarregarContratosCerc}
+              />
+            ) : (
+              // ContratosCercList só filtra por contratante quando recebe o
+              // documento; sem ele, listaria os contratos de todos os clientes
+              // do financiador dentro da ficha deste — e uma ação como
+              // "Inativar" ali seria irreversível sobre o registro errado.
+              <p className="text-sm text-gray-500 text-center py-6">
+                Cliente sem documento cadastrado — não é possível listar os contratos CERC.
+              </p>
+            )}
           </div>
         )}
       </div>
