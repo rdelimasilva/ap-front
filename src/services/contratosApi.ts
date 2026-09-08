@@ -187,9 +187,19 @@ async function request<T>(method: string, path: string, options: RequestOptions 
   }
 
   if (!response.ok) {
-    const corpo = (data && typeof data === 'object' ? data : {}) as { codigo?: string; erro?: string; erros?: Array<{ codigo?: string; mensagem?: string } | string> };
-    if (corpo.codigo || corpo.erro) {
-      throw new ContratosApiError(corpo.codigo ?? 'ERRO_DESCONHECIDO', corpo.erro ?? 'erro desconhecido', response.status);
+    // O serviço usa dois formatos de corpo de erro: o de validação estrutural
+    // (`codigo` + `erro`, onde `erro` já é o texto da mensagem) e o de
+    // autenticação de shared/jwt_auth.py (sem `codigo`; `erro` é o próprio
+    // código — NAO_AUTENTICADO, SERVICO_MAL_CONFIGURADO — e `mensagem`, quando
+    // vem, carrega o diagnóstico real, como "token expirado"). Sem distinguir
+    // os dois, o diagnóstico de autenticação era descartado e todo 401/503
+    // virava "ERRO_DESCONHECIDO" para quem consome `codigo`.
+    const corpo = (data && typeof data === 'object' ? data : {}) as { codigo?: string; erro?: string; mensagem?: string; erros?: Array<{ codigo?: string; mensagem?: string } | string> };
+    if (corpo.codigo) {
+      throw new ContratosApiError(corpo.codigo, corpo.erro ?? 'erro desconhecido', response.status);
+    }
+    if (corpo.erro) {
+      throw new ContratosApiError(corpo.erro, corpo.mensagem ?? corpo.erro, response.status);
     }
     if (Array.isArray(corpo.erros) && corpo.erros.length > 0) {
       const mensagens = corpo.erros.map(e => (typeof e === 'string' ? e : e.mensagem ?? e.codigo ?? JSON.stringify(e)));
