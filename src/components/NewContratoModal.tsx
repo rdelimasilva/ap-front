@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { showToast } from '../hooks/useToast';
@@ -10,10 +10,22 @@ import {
 } from '../services/contratosApi';
 import { validarPayloadContrato, type ErrosPorCampo } from '../utils/contratoValidation';
 
+// Semeia o formulário a partir de onde o usuário veio (radar de URs de um
+// cliente, ou a ficha do cliente). Todo campo semeado continua editável.
+export interface ContextoTrava {
+  documentoContratante?: string;
+  documentoUsuarioFinalRecebedor?: string;
+  listaCnpjCredenciadora?: string[];
+  listaCodigoArranjoPagamento?: string[];
+  dataInicio?: string;
+  dataFim?: string;
+}
+
 interface NewContratoModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreated: () => void;
+  contextoInicial?: ContextoTrava;
 }
 
 interface ParcelaForm {
@@ -67,6 +79,20 @@ const ESTADO_INICIAL: FormState = {
   definicaoDataInicio: '', definicaoDataFim: '', regrasDivisao: '1', valorAOnerar: '',
   tipoDistribuicao: '',
 };
+
+// Só os campos que a origem (radar de URs ou ficha do cliente) sabe de
+// antemão; saldoDevedor/limiteOperacaoGarantida/valorMantido/valorAOnerar
+// ficam de fora de propósito — ver nota no useEffect de abertura.
+function comContexto(contexto?: ContextoTrava): FormState {
+  if (!contexto) return ESTADO_INICIAL;
+  return {
+    ...ESTADO_INICIAL,
+    documentoContratante: contexto.documentoContratante ?? '',
+    definicaoDocumentoUfr: contexto.documentoUsuarioFinalRecebedor ?? '',
+    definicaoDataInicio: contexto.dataInicio ?? '',
+    definicaoDataFim: contexto.dataFim ?? '',
+  };
+}
 
 const TIPOS_EFEITO: Array<{ value: FormState['tipoEfeito']; label: string }> = [
   { value: '1', label: '1 — Troca de titularidade' },
@@ -174,8 +200,8 @@ const Campo: React.FC<{ label: string; erro?: string; obrigatorio?: boolean; chi
 const inputClass = (temErro?: boolean) =>
   `w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 ${temErro ? 'border-red-400' : 'border-gray-300'}`;
 
-export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onClose, onCreated }) => {
-  const [form, setForm] = useState<FormState>(ESTADO_INICIAL);
+export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onClose, onCreated, contextoInicial }) => {
+  const [form, setForm] = useState<FormState>(() => comContexto(contextoInicial));
   const [parcelas, setParcelas] = useState<ParcelaForm[]>([]);
   const [todasCredenciadoras, setTodasCredenciadoras] = useState(true);
   const [credenciadorasRaw, setCredenciadorasRaw] = useState('');
@@ -184,6 +210,38 @@ export const NewContratoModal: React.FC<NewContratoModalProps> = ({ isOpen, onCl
   const [erros, setErros] = useState<ErrosPorCampo>({});
   const [bannerErro, setBannerErro] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Acima disto a lista deixa de ser um recorte útil e vira ruído: cai para a
+  // sentinela "todas" (99T), que é o que o formulário já envia nesse caso.
+  const LIMITE_LISTA = 10;
+
+  // Reaplica o contexto a cada abertura, para que o formulário nunca traga o
+  // cliente da vez anterior. Vale também para as duas listas, que ficam fora
+  // do FormState e por isso não são cobertas por comContexto.
+  useEffect(() => {
+    if (!isOpen) return;
+    setForm(comContexto(contextoInicial));
+    setParcelas([]);
+    setErros({});
+    setBannerErro(null);
+
+    const semear = (
+      valores: string[] | undefined,
+      setTodos: (v: boolean) => void,
+      setRaw: (v: string) => void,
+    ) => {
+      if (!valores || valores.length === 0 || valores.length > LIMITE_LISTA) {
+        setTodos(true);
+        setRaw('');
+        return;
+      }
+      setTodos(false);
+      setRaw(valores.join(', '));
+    };
+
+    semear(contextoInicial?.listaCnpjCredenciadora, setTodasCredenciadoras, setCredenciadorasRaw);
+    semear(contextoInicial?.listaCodigoArranjoPagamento, setTodosArranjos, setArranjosRaw);
+  }, [isOpen, contextoInicial]);
 
   if (!isOpen) return null;
 
