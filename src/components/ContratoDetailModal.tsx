@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Ban, ArrowDownCircle } from 'lucide-react';
 import { showToast } from '../hooks/useToast';
@@ -6,8 +6,10 @@ import {
   getContrato,
   inativarContrato,
   baixarContrato,
+  getEventosContrato,
   ContratosApiError,
   type ContratoDetalheDTO,
+  type EventoContratoDTO,
 } from '../services/contratosApi';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -15,6 +17,26 @@ interface ContratoDetailModalProps {
   contratoId: string | null;
   onClose: () => void;
   onChanged: () => void;
+}
+
+const EVENTO_LABEL: Record<string, string> = {
+  webhook_recebido: 'Confirmação recebida da CERC',
+  rejeicao_estrutural: 'Rejeitado pela CERC',
+  ContratoSubgarantido: 'Contrato subgarantido',
+  requisicao_cerc: 'Requisição à CERC',
+};
+
+function formatarDataHora(iso: string): string {
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
+}
+
+// A rejeição estrutural é o único evento cujo payload interessa em texto: são
+// os códigos que a CERC devolveu, hoje visíveis só no toast do momento da
+// submissão.
+function errosDoEvento(evento: EventoContratoDTO): string[] {
+  const payload = evento.payload as { erros?: Array<{ codigo?: string; mensagem?: string }> } | null;
+  if (!payload?.erros) return [];
+  return payload.erros.map(e => [e.codigo, e.mensagem].filter(Boolean).join(' — '));
 }
 
 function formatarData(iso: string | null): string {
@@ -36,6 +58,52 @@ export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contra
   const [isLoading, setIsLoading] = useState(false);
   const [confirmacao, setConfirmacao] = useState<'inativar' | 'baixar' | null>(null);
   const [isProcessando, setIsProcessando] = useState(false);
+  const [aba, setAba] = useState<'detalhe' | 'historico'>('detalhe');
+  const [eventos, setEventos] = useState<EventoContratoDTO[] | null>(null);
+  const [erroEventos, setErroEventos] = useState<string | null>(null);
+  const [carregandoEventos, setCarregandoEventos] = useState(false);
+
+  // O modal não desmonta ao trocar de contrato (a instância é única em
+  // ContratosCercModule, só o contratoId muda) — uma resposta que chega depois
+  // da troca precisa ser descartada, senão a timeline (com dados bancários do
+  // domicílio) do contrato anterior aparece atribuída ao contrato atual.
+  const contratoIdRef = useRef(contratoId);
+  useEffect(() => {
+    contratoIdRef.current = contratoId;
+  }, [contratoId]);
+
+  const carregarEventos = useCallback(async () => {
+    if (!contratoId) return;
+    setCarregandoEventos(true);
+    setErroEventos(null);
+    try {
+      const dados = await getEventosContrato(contratoId);
+      if (contratoIdRef.current !== contratoId) return;
+      setEventos(dados);
+    } catch (err) {
+      if (contratoIdRef.current !== contratoId) return;
+      setErroEventos(err instanceof Error ? err.message : 'erro desconhecido');
+    } finally {
+      if (contratoIdRef.current === contratoId) setCarregandoEventos(false);
+    }
+  }, [contratoId]);
+
+  // Só busca quando o usuário abre a aba: a maioria das visitas ao modal quer
+  // o detalhe, e a timeline traz request/response inteiros.
+  useEffect(() => {
+    if (aba === 'historico' && eventos === null && !carregandoEventos) carregarEventos();
+  }, [aba, eventos, carregandoEventos, carregarEventos]);
+
+  // Contrato diferente, timeline diferente. Também zera carregandoEventos:
+  // sem isso, uma busca do contrato anterior ainda em voo (e agora descartada
+  // pelo guard acima) nunca chegaria a liberar a flag, e a aba do novo
+  // contrato ficaria travada em "Carregando...".
+  useEffect(() => {
+    setAba('detalhe');
+    setEventos(null);
+    setErroEventos(null);
+    setCarregandoEventos(false);
+  }, [contratoId]);
 
   const carregar = async (id: string) => {
     setIsLoading(true);
@@ -92,71 +160,131 @@ export const ContratoDetailModal: React.FC<ContratoDetailModalProps> = ({ contra
           </button>
         </div>
 
+        <div className="flex gap-1 border-b border-gray-200 mt-3">
+          {([['detalhe', 'Detalhe'], ['historico', 'Histórico']] as const).map(([chave, rotulo]) => (
+            <button
+              key={chave}
+              onClick={() => setAba(chave)}
+              className={`px-4 py-2 text-sm -mb-px border-b-2 transition-colors ${
+                aba === chave
+                  ? 'border-emerald-600 text-emerald-700 font-medium'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
+
         <div className="p-6 space-y-6">
           {isLoading && <p className="text-center text-gray-400 py-8">Carregando...</p>}
 
           {!isLoading && contrato && (
             <>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div><p className="text-gray-500">Referência externa</p><p className="font-medium text-gray-900">{contrato.referenciaExterna}</p></div>
-                <div><p className="text-gray-500">Identificador</p><p className="font-medium text-gray-900">{contrato.identificadorContrato}</p></div>
-                <div><p className="text-gray-500">Status</p><p className="font-medium text-gray-900">{contrato.status}</p></div>
-                <div><p className="text-gray-500">Protocolo CERC</p><p className="font-medium text-gray-900">{contrato.protocolo ?? '—'}</p></div>
-                <div><p className="text-gray-500">Saldo devedor</p><p className="font-medium text-gray-900">{formatarValor(contrato.saldoDevedor)}</p></div>
-                <div><p className="text-gray-500">Vencimento</p><p className="font-medium text-gray-900">{formatarData(contrato.dataVencimento)}</p></div>
-                <div><p className="text-gray-500">Resultado da distribuição</p><p className="font-medium text-gray-900">{contrato.resultadoDistribuicao ?? '—'}</p></div>
-                <div><p className="text-gray-500">Ind. sobrecolateral</p><p className="font-medium text-gray-900">{contrato.indSobrecolateral ?? '—'}</p></div>
-              </div>
+              {aba === 'detalhe' && (
+                <>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div><p className="text-gray-500">Referência externa</p><p className="font-medium text-gray-900">{contrato.referenciaExterna}</p></div>
+                    <div><p className="text-gray-500">Identificador</p><p className="font-medium text-gray-900">{contrato.identificadorContrato}</p></div>
+                    <div><p className="text-gray-500">Status</p><p className="font-medium text-gray-900">{contrato.status}</p></div>
+                    <div><p className="text-gray-500">Protocolo CERC</p><p className="font-medium text-gray-900">{contrato.protocolo ?? '—'}</p></div>
+                    <div><p className="text-gray-500">Saldo devedor</p><p className="font-medium text-gray-900">{formatarValor(contrato.saldoDevedor)}</p></div>
+                    <div><p className="text-gray-500">Vencimento</p><p className="font-medium text-gray-900">{formatarData(contrato.dataVencimento)}</p></div>
+                    <div><p className="text-gray-500">Resultado da distribuição</p><p className="font-medium text-gray-900">{contrato.resultadoDistribuicao ?? '—'}</p></div>
+                    <div><p className="text-gray-500">Ind. sobrecolateral</p><p className="font-medium text-gray-900">{contrato.indSobrecolateral ?? '—'}</p></div>
+                  </div>
 
-              {contrato.garantias.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Garantia</h3>
-                  {contrato.garantias.map(g => (
-                    <div key={g.id} className="border border-gray-100 rounded-lg p-4 space-y-3">
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div><p className="text-gray-500">Referência</p><p className="text-gray-900">{g.referenciaExterna}</p></div>
-                        <div><p className="text-gray-500">Valor a onerar</p><p className="text-gray-900">{formatarValor(g.valorAOnerar)}</p></div>
-                      </div>
-                      {g.unidadesRecebiveisAlcancadas.length > 0 && (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead className="text-gray-400 uppercase">
-                              <tr>
-                                <th className="text-left py-1">Credenciadora</th>
-                                <th className="text-left py-1">Arranjo</th>
-                                <th className="text-left py-1">Liquidação</th>
-                                <th className="text-right py-1">Valor onerado</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {g.unidadesRecebiveisAlcancadas.map((ur, i) => (
-                                <tr key={i} className="border-t border-gray-50">
-                                  <td className="py-1">{ur.cnpjCredenciadora}</td>
-                                  <td className="py-1">{ur.codigoArranjoPagamento}</td>
-                                  <td className="py-1">{formatarData(ur.dataLiquidacao)}</td>
-                                  <td className="py-1 text-right">{formatarValor(ur.valorOnerado)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                  {contrato.garantias.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Garantia</h3>
+                      {contrato.garantias.map(g => (
+                        <div key={g.id} className="border border-gray-100 rounded-lg p-4 space-y-3">
+                          <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div><p className="text-gray-500">Referência</p><p className="text-gray-900">{g.referenciaExterna}</p></div>
+                            <div><p className="text-gray-500">Valor a onerar</p><p className="text-gray-900">{formatarValor(g.valorAOnerar)}</p></div>
+                          </div>
+                          {g.unidadesRecebiveisAlcancadas.length > 0 && (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead className="text-gray-400 uppercase">
+                                  <tr>
+                                    <th className="text-left py-1">Credenciadora</th>
+                                    <th className="text-left py-1">Arranjo</th>
+                                    <th className="text-left py-1">Liquidação</th>
+                                    <th className="text-right py-1">Valor onerado</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {g.unidadesRecebiveisAlcancadas.map((ur, i) => (
+                                    <tr key={i} className="border-t border-gray-50">
+                                      <td className="py-1">{ur.cnpjCredenciadora}</td>
+                                      <td className="py-1">{ur.codigoArranjoPagamento}</td>
+                                      <td className="py-1">{formatarData(ur.dataLiquidacao)}</td>
+                                      <td className="py-1 text-right">{formatarValor(ur.valorOnerado)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {contrato.indicadoresConsistencia.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Indicadores de consistência</h3>
+                      <ul className="text-sm space-y-1">
+                        {contrato.indicadoresConsistencia.map((ind, i) => (
+                          <li key={i} className="flex justify-between border-b border-gray-50 py-1">
+                            <span className="text-gray-600">{ind.indicador}</span>
+                            <span className="text-gray-900">{ind.resultado ?? '—'} (criticidade {ind.criticidade ?? '—'})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {aba === 'historico' && (
+                <div className="space-y-3">
+                  {carregandoEventos && <p className="text-sm text-gray-400">Carregando histórico...</p>}
+                  {erroEventos && (
+                    <div className="text-sm">
+                      <p className="text-red-600">Falha ao carregar o histórico: {erroEventos}</p>
+                      <button onClick={carregarEventos} className="mt-2 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200">
+                        Tentar de novo
+                      </button>
+                    </div>
+                  )}
+                  {eventos?.length === 0 && (
+                    <p className="text-sm text-gray-400">
+                      Nenhum evento registrado ainda. A confirmação da CERC chega por webhook.
+                    </p>
+                  )}
+                  {eventos?.map((evento, i) => (
+                    <div key={i} className="border-l-2 border-gray-200 pl-4 pb-3">
+                      <p className="text-sm font-medium text-gray-900">{EVENTO_LABEL[evento.tipo] ?? evento.tipo}</p>
+                      <p className="text-xs text-gray-500">{formatarDataHora(evento.ocorridoEm)}</p>
+                      {errosDoEvento(evento).map((erro, j) => (
+                        <p key={j} className="text-xs text-red-600 mt-1">{erro}</p>
+                      ))}
+                      {evento.requisicoes.length > 0 && (
+                        <details className="mt-2">
+                          <summary className="text-xs text-gray-500 cursor-pointer">Detalhe técnico</summary>
+                          {evento.requisicoes.map((r, k) => (
+                            <div key={k} className="mt-2 text-xs">
+                              <p className="text-gray-600">{r.recurso} — HTTP {r.httpStatus ?? 'sem resposta'} (tentativa {r.tentativa})</p>
+                              <pre className="bg-gray-50 p-2 rounded overflow-x-auto">{JSON.stringify(r.requestBody, null, 2)}</pre>
+                              <pre className="bg-gray-50 p-2 rounded overflow-x-auto">{JSON.stringify(r.responseBody, null, 2)}</pre>
+                            </div>
+                          ))}
+                        </details>
                       )}
                     </div>
                   ))}
-                </div>
-              )}
-
-              {contrato.indicadoresConsistencia.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Indicadores de consistência</h3>
-                  <ul className="text-sm space-y-1">
-                    {contrato.indicadoresConsistencia.map((ind, i) => (
-                      <li key={i} className="flex justify-between border-b border-gray-50 py-1">
-                        <span className="text-gray-600">{ind.indicador}</span>
-                        <span className="text-gray-900">{ind.resultado ?? '—'} (criticidade {ind.criticidade ?? '—'})</span>
-                      </li>
-                    ))}
-                  </ul>
                 </div>
               )}
 
