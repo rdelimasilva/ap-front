@@ -1280,9 +1280,13 @@ const operations: { key: OperationType; title: string; description: string; icon
     iconBg: 'bg-blue-100',
   },
   {
+    // Único card ligado a um backend real: abre a jornada de registro do
+    // contrato de garantia na CERC (AP007). O título precisa dizer "contrato"
+    // porque é o que o usuário procura — com o rótulo antigo, "Garantias", não
+    // havia como saber que o registro de contrato ficava aqui dentro.
     key: 'guarantees',
-    title: 'Garantias',
-    description: 'Constitua garantias sobre recebíveis de clientes',
+    title: 'Garantias — Registro CERC',
+    description: 'Registra na CERC o contrato de garantia sobre os recebíveis do cliente',
     icon: <Shield className="w-7 h-7 text-green-600" />,
     color: 'text-green-600',
     hoverBorder: 'hover:border-green-400',
