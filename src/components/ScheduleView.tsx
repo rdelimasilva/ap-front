@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, Lock, CheckCircle, Calendar, ArrowLeft, Eye, FileText, Plus, Filter, Search, Activity, ChevronDown, ChevronRight, CreditCard, Shield, DollarSign, RefreshCw, Zap, ArrowRight, X, ArrowUpDown, ArrowUp, ArrowDown, Clock } from 'lucide-react';
+import { TrendingUp, Lock, CheckCircle, Calendar, ArrowLeft, Eye, FileText, Plus, Filter, Search, Activity, CreditCard, Shield, DollarSign, RefreshCw, Zap, ArrowRight, X, ArrowUpDown, ArrowUp, ArrowDown, Clock } from 'lucide-react';
 import { Client } from '../types';
 import { NewOptInModal } from './NewOptInModal';
 import { OptInDetailsModal } from './OptInDetailsModal';
@@ -11,7 +11,7 @@ import { OwnershipTransferJourney } from './OwnershipTransferJourney';
 import { PreContractedAntecipationJourney } from './PreContractedAntecipationJourney';
 import { Tooltip } from './Tooltip';
 import { showToast } from '../hooks/useToast';
-import { listAgendaUrs, type AgendaUrDTO } from '../services/agendaApi';
+import { listAgendaUrs, getPagamentosUr, getTotaisUrs, type AgendaUrDTO, type PagamentoUrDTO, type TotaisUrsResposta } from '../services/agendaApi';
 import { ARRANJOS_CERC } from '../data/arranjosCerc';
 import { CREDENCIADORAS_CERC } from '../data/credenciadorasCerc';
 
@@ -51,6 +51,7 @@ interface UrExibicao {
   cnpjCredenciadora: string;
   documentoUsuarioFinalRecebedor: string;
   titularUR: string;
+  codigoArranjo: string;
   constituicao: '1' | '2';
   valorConstituidoTotal: number;
   valorConstituidoAntecipacaoPreContratado: number;
@@ -93,6 +94,7 @@ function mapearUrExibicao(ur: AgendaUrDTO): UrExibicao {
     cnpjCredenciadora: ur.cnpjCredenciadora,
     documentoUsuarioFinalRecebedor: ur.documentoUfr,
     titularUR: ur.documentoTitular,
+    codigoArranjo: ur.codigoArranjo,
     constituicao: ur.constituicao,
     valorConstituidoTotal: Number(ur.valorConstituidoTotal),
     valorConstituidoAntecipacaoPreContratado: Number(ur.valorConstituidoAntecipacaoPre),
@@ -104,21 +106,19 @@ function mapearUrExibicao(ur: AgendaUrDTO): UrExibicao {
   };
 }
 
-// MOCKADO — agenda_ur_pagamento não é exposto por nenhum endpoint do
-// backend ainda (design doc §2.1bis do plano de integração). Gera uma
-// única linha de "informação de pagamento" fabricada a partir de dados
-// reais da UR, só pra a seção do modal não ficar vazia.
-function gerarInformacaoPagamentoMock(ur: UrExibicao): URPaymentInfo[] {
-  return [{
-    numeroDocumentoTitularDomicilio: ur.titularUR,
-    tipoConta: 'CC',
-    ispb: '00000000',
-    numeroConta: '—',
-    valorAPagar: ur.valorTotalUR,
-    dataLiquidacaoEfetiva: ur.status === 'liquidado' ? ur.settlementDate : undefined,
-    valorLiquidacaoEfetiva: ur.status === 'liquidado' ? ur.valorTotalUR : undefined,
-    tipoInformacaoPagamento: 'Mockado — endpoint agenda_ur_pagamento não disponível',
-  }];
+function mapearPagamentoExibicao(p: PagamentoUrDTO): URPaymentInfo {
+  return {
+    numeroDocumentoTitularDomicilio: p.domicilio.numeroDocumentoTitular ?? '',
+    tipoConta: (p.domicilio.tipoConta ?? '') as URPaymentInfo['tipoConta'],
+    ispb: p.domicilio.ispb ?? '',
+    agencia: p.domicilio.agencia ?? undefined,
+    numeroConta: p.domicilio.numeroConta ?? '',
+    valorAPagar: Number(p.valorAPagar),
+    beneficiario: p.beneficiario ?? undefined,
+    dataLiquidacaoEfetiva: p.dataLiquidacaoEfetiva ?? undefined,
+    valorLiquidacaoEfetiva: p.valorLiquidacaoEfetiva != null ? Number(p.valorLiquidacaoEfetiva) : undefined,
+    tipoInformacaoPagamento: p.tipoInformacaoPagamento,
+  };
 }
 
 interface URMutationEvent {
@@ -188,9 +188,8 @@ interface OptInClient {
 export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const clienteSessaoRef = useRef(0);
-  const [bloqueadoExpanded, setBloqueadoExpanded] = useState(false);
-  const [bloqueadoFilter, setBloqueadoFilter] = useState<'all' | 'mine' | 'others'>('all');
-  const [liquidadoHojeExpanded, setLiquidadoHojeExpanded] = useState(false);
+  const urPagamentosSessaoRef = useRef(0);
+  const [totaisUrs, setTotaisUrs] = useState<TotaisUrsResposta | null>(null);
   const [showNewOptInModal, setShowNewOptInModal] = useState(false);
   const [showOptInDetailsModal, setShowOptInDetailsModal] = useState(false);
   const [selectedOptInClient, setSelectedOptInClient] = useState<OptInClient | null>(null);
@@ -208,6 +207,8 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
   const [urSettlementEnd, setUrSettlementEnd] = useState('');
   const [urSettlementSort, setUrSettlementSort] = useState<'asc' | 'desc' | null>(null);
   const [selectedUR, setSelectedUR] = useState<UrExibicao | null>(null);
+  const [selectedURPagamentos, setSelectedURPagamentos] = useState<URPaymentInfo[]>([]);
+  const [isLoadingSelectedURPagamentos, setIsLoadingSelectedURPagamentos] = useState(false);
   const [urs, setUrs] = useState<UrExibicao[]>([]);
   const [isLoadingUrs, setIsLoadingUrs] = useState(false);
   const [proximoCursor, setProximoCursor] = useState<number | null>(null);
@@ -307,6 +308,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
     setSelectedUR(null);
     setUrAcquirerFilter('all');
     setUrBrandFilter('all');
+    setTotaisUrs(null);
 
     if (!selectedClient) {
       return;
@@ -314,9 +316,9 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
 
     const ufr = selectedClient.document.replace(/\D/g, '');
     if (!ufr) {
-      // Documento vazio/malformado: nunca chamar listAgendaUrs sem ufr, senão
-      // o backend retorna todas as URs visíveis ao financiador do JWT
-      // (exposição de dados cross-cliente).
+      // Documento vazio/malformado: nunca chamar listAgendaUrs/getTotaisUrs
+      // sem ufr, senão o backend retorna dado de todos os UFRs visíveis ao
+      // financiador do JWT (exposição de dados cross-cliente).
       return;
     }
 
@@ -336,7 +338,50 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
       .finally(() => {
         if (sessaoAtual === clienteSessaoRef.current) setIsLoadingUrs(false);
       });
+
+    getTotaisUrs({ ufr })
+      .then((resposta) => {
+        if (sessaoAtual !== clienteSessaoRef.current) return;
+        setTotaisUrs(resposta);
+      })
+      .catch(() => {
+        if (sessaoAtual !== clienteSessaoRef.current) return;
+        showToast('error', 'Erro ao carregar totalizadores da agenda');
+        setTotaisUrs(null);
+      });
   }, [selectedClient]);
+
+  useEffect(() => {
+    urPagamentosSessaoRef.current += 1;
+    const sessaoAtual = urPagamentosSessaoRef.current;
+
+    if (!selectedUR) {
+      setSelectedURPagamentos([]);
+      return;
+    }
+
+    setIsLoadingSelectedURPagamentos(true);
+    getPagamentosUr({
+      entidadeRegistradora: selectedUR.entidadeRegistradora,
+      credenciadora: selectedUR.cnpjCredenciadora,
+      ufr: selectedUR.documentoUsuarioFinalRecebedor,
+      titular: selectedUR.titularUR,
+      arranjo: selectedUR.codigoArranjo,
+      dataLiquidacao: selectedUR.settlementDate,
+    })
+      .then((resposta) => {
+        if (sessaoAtual !== urPagamentosSessaoRef.current) return;
+        setSelectedURPagamentos(resposta.pagamentos.map(mapearPagamentoExibicao));
+      })
+      .catch(() => {
+        if (sessaoAtual !== urPagamentosSessaoRef.current) return;
+        showToast('error', 'Erro ao carregar informações de pagamento da UR');
+        setSelectedURPagamentos([]);
+      })
+      .finally(() => {
+        if (sessaoAtual === urPagamentosSessaoRef.current) setIsLoadingSelectedURPagamentos(false);
+      });
+  }, [selectedUR]);
 
   function carregarMaisUrs() {
     if (!selectedClient || proximoCursor === null) return;
@@ -592,145 +637,45 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
             )}
           </div>
           <div className="space-y-4">
-            <div className="bg-red-50 rounded-lg">
-              <button
-                onClick={() => setBloqueadoExpanded(!bloqueadoExpanded)}
-                className="w-full flex items-center justify-between p-4"
-              >
-                <div className="flex items-center space-x-3">
-                  <Lock className="w-5 h-5 text-red-600" />
-                  <span className="text-sm font-medium text-gray-900">Bloqueado</span>
-                  <Tooltip content="Valores comprometidos com operações existentes (promessa de cessão ou outros gravames)" />
-                  {bloqueadoExpanded ? (
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                  )}
-                </div>
-                <span className="text-lg font-bold text-red-600">{formatCurrency(totalFutureBlocked)}</span>
-              </button>
-              {bloqueadoExpanded && (
-                <div className="px-4 pb-4 pt-0 space-y-3">
-                  {/* Filtro: Todos / Para mim / Terceiros */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setBloqueadoFilter('all')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                        bloqueadoFilter === 'all'
-                          ? 'bg-gray-700 text-white'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                    >
-                      Todos
-                    </button>
-                    <button
-                      onClick={() => setBloqueadoFilter('mine')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                        bloqueadoFilter === 'mine'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                      }`}
-                    >
-                      Bloqueado para mim
-                    </button>
-                    <button
-                      onClick={() => setBloqueadoFilter('others')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                        bloqueadoFilter === 'others'
-                          ? 'bg-red-600 text-white'
-                          : 'bg-red-100 text-red-700 hover:bg-red-200'
-                      }`}
-                    >
-                      Bloqueado por terceiros
-                    </button>
-                  </div>
-
-                  {/* Valores conforme filtro */}
-                  {(bloqueadoFilter === 'all' || bloqueadoFilter === 'mine') && (
-                    <div>
-                      {bloqueadoFilter === 'all' && (
-                        <p className="text-xs font-semibold text-blue-800 mb-1.5 uppercase tracking-wide">Bloqueado para mim</p>
-                      )}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between p-3 bg-blue-100/50 rounded-lg">
-                          <span className="text-sm text-gray-700">Promessa de Cessão</span>
-                          <span className="text-sm font-semibold text-blue-700">{formatCurrency(Math.round(totalFutureBlocked * 0.45))}</span>
-                        </div>
-                        <div className="flex items-center justify-between p-3 bg-blue-100/50 rounded-lg">
-                          <span className="text-sm text-gray-700">Garantia</span>
-                          <span className="text-sm font-semibold text-blue-700">{formatCurrency(Math.round(totalFutureBlocked * 0.2))}</span>
-                        </div>
-                        <div className="flex items-center justify-between p-3 bg-blue-100/70 rounded-lg font-medium">
-                          <span className="text-sm text-blue-800">Subtotal</span>
-                          <span className="text-sm font-bold text-blue-700">{formatCurrency(Math.round(totalFutureBlocked * 0.65))}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {(bloqueadoFilter === 'all' || bloqueadoFilter === 'others') && (
-                    <div>
-                      {bloqueadoFilter === 'all' && (
-                        <p className="text-xs font-semibold text-red-800 mb-1.5 mt-2 uppercase tracking-wide">Bloqueado por terceiros</p>
-                      )}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between p-3 bg-red-100/50 rounded-lg">
-                          <span className="text-sm text-gray-700">Promessa de Cessão</span>
-                          <span className="text-sm font-semibold text-red-700">{formatCurrency(Math.round(totalFutureBlocked * 0.25))}</span>
-                        </div>
-                        <div className="flex items-center justify-between p-3 bg-red-100/50 rounded-lg">
-                          <span className="text-sm text-gray-700">Outros Gravames</span>
-                          <span className="text-sm font-semibold text-red-700">{formatCurrency(Math.round(totalFutureBlocked * 0.1))}</span>
-                        </div>
-                        <div className="flex items-center justify-between p-3 bg-red-100/70 rounded-lg font-medium">
-                          <span className="text-sm text-red-800">Subtotal</span>
-                          <span className="text-sm font-bold text-red-700">{formatCurrency(Math.round(totalFutureBlocked * 0.35))}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+            <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <Lock className="w-5 h-5 text-red-600" />
+                <span className="text-sm font-medium text-gray-900">Bloqueado</span>
+                <Tooltip content="Valores comprometidos com operações existentes (promessa de cessão ou outros gravames) — soma passado + futuro" />
+              </div>
+              <span className="text-lg font-bold text-red-600">
+                {totaisUrs ? formatCurrency(Number(totaisUrs.bloqueado)) : '—'}
+              </span>
             </div>
             <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
               <div className="flex items-center space-x-3">
                 <TrendingUp className="w-5 h-5 text-blue-600" />
                 <span className="text-sm font-medium text-gray-900">Disponível</span>
-                <Tooltip content="Valores livres para novas operações de crédito" />
+                <Tooltip content="Valores livres para novas operações de crédito — soma passado + futuro" />
               </div>
-              <span className="text-lg font-bold text-blue-600">{formatCurrency(totalFutureAvailable)}</span>
+              <span className="text-lg font-bold text-blue-600">
+                {totaisUrs ? formatCurrency(Number(totaisUrs.disponivel)) : '—'}
+              </span>
             </div>
-            <div className="bg-purple-50 rounded-lg">
-              <button
-                onClick={() => setLiquidadoHojeExpanded(!liquidadoHojeExpanded)}
-                className="w-full flex items-center justify-between p-4"
-              >
-                <div className="flex items-center space-x-3">
-                  <Activity className="w-5 h-5 text-purple-600" />
-                  <span className="text-sm font-medium text-gray-900">Liquidado Hoje</span>
-                  {liquidadoHojeExpanded ? (
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                  )}
-                </div>
-                <span className="text-lg font-bold text-purple-600">{formatCurrency(0)}</span>
-              </button>
-              {liquidadoHojeExpanded && (
-                <div className="px-4 pb-4 pt-0">
-                  <div className="flex items-center justify-between p-3 bg-purple-100/50 rounded-lg">
-                    <span className="text-sm text-gray-700">Valor Pré-Contratado</span>
-                    <span className="text-sm font-semibold text-purple-700">{formatCurrency(0)}</span>
-                  </div>
-                </div>
-              )}
+            <div className="flex items-center justify-between p-4 bg-purple-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <Activity className="w-5 h-5 text-purple-600" />
+                <span className="text-sm font-medium text-gray-900">Liquidado Hoje</span>
+                <Tooltip content="Confirmação real de pagamento recebida hoje (data_liquidacao_efetiva), não a data agendada da UR" />
+              </div>
+              <span className="text-lg font-bold text-purple-600">
+                {totaisUrs ? formatCurrency(Number(totaisUrs.liquidadoHoje)) : '—'}
+              </span>
             </div>
             <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
               <div className="flex items-center space-x-3">
                 <CheckCircle className="w-5 h-5 text-green-600" />
                 <span className="text-sm font-medium text-gray-900">Total a Liquidar</span>
+                <Tooltip content="Total constituído menos o que já foi confirmado como liquidado, em qualquer data" />
               </div>
-              <span className="text-lg font-bold text-green-600">{formatCurrency(totalFutureLiquidate)}</span>
+              <span className="text-lg font-bold text-green-600">
+                {totaisUrs ? formatCurrency(Number(totaisUrs.totalALiquidar)) : '—'}
+              </span>
             </div>
           </div>
         </div>
@@ -980,7 +925,13 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ clients }) => {
               <div className="border-t border-gray-200 pt-4">
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Informações de Pagamento</h3>
                 <div className="space-y-3">
-                  {gerarInformacaoPagamentoMock(selectedUR).map((info, index) => (
+                  {isLoadingSelectedURPagamentos && (
+                    <p className="text-sm text-gray-500">Carregando informações de pagamento…</p>
+                  )}
+                  {!isLoadingSelectedURPagamentos && selectedURPagamentos.length === 0 && (
+                    <p className="text-sm text-gray-500">Nenhuma informação de pagamento para esta UR.</p>
+                  )}
+                  {selectedURPagamentos.map((info, index) => (
                     <div key={index} className="border border-gray-200 rounded-lg p-3 space-y-2">
                       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                         <div>

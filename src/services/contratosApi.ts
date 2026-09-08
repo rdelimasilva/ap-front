@@ -140,7 +140,7 @@ export interface OperacaoPosRegistroResultado {
   protocolo: string | null;
 }
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
+const BASE_URL = import.meta.env.VITE_CONTRATOS_API_BASE_URL as string;
 const FINANCIADOR_ID = import.meta.env.VITE_FINANCIADOR_ID as string;
 
 interface RequestOptions {

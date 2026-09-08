@@ -88,3 +88,70 @@ function buildQuery(params: Record<string, string | number | undefined>): string
 export function listAgendaUrs(filtros: ListarUrsFiltros = {}): Promise<ListarUrsResposta> {
   return request<ListarUrsResposta>('GET', `/agendas/urs${buildQuery(filtros)}`);
 }
+
+export interface TotaisUrsFiltros {
+  ufr: string;
+  credenciadora?: string;
+  arranjo?: string;
+}
+
+export interface TotaisUrsResposta {
+  bloqueado: string;
+  disponivel: string;
+  liquidadoHoje: string;
+  totalALiquidar: string;
+}
+
+// bloqueado/disponivel somam passado + futuro (estado atual da UR, não uma
+// janela); liquidadoHoje é confirmação real de pagamento hoje, não data
+// agendada; totalALiquidar é o que falta pagar de verdade (constituído menos
+// já confirmado), não uma soma de valorTotalUR — ver
+// apps/agenda/views.py::totais_urs no backend.
+export function getTotaisUrs(filtros: TotaisUrsFiltros): Promise<TotaisUrsResposta> {
+  return request<TotaisUrsResposta>('GET', `/agendas/urs/totais${buildQuery(filtros)}`);
+}
+
+export interface DomicilioPagamentoDTO {
+  numeroDocumentoTitular?: string | null;
+  tipoConta?: string | null;
+  compe?: string | null;
+  ispb?: string | null;
+  agencia?: string | null;
+  numeroConta?: string | null;
+}
+
+export interface PagamentoUrDTO {
+  tipoInformacaoPagamento: string;
+  indicadorEfeitosContrato: string | null;
+  identificadorCercContrato: string | null;
+  regrasDivisao: string | null;
+  valorOnerado: string | null;
+  valorConstituidoEfeito: string | null;
+  valorAPagar: string;
+  beneficiario: string | null;
+  dataLiquidacaoEfetiva: string | null;
+  valorLiquidacaoEfetiva: string | null;
+  motivoNaoPagamento: string | null;
+  domicilio: DomicilioPagamentoDTO;
+}
+
+// Identifica a UR pela chave natural — os mesmos 6 campos que cada item de
+// ListarUrsResposta já traz (backend não expõe `sequencia`, o cursor interno
+// de paginação, como identificador estável — ver
+// apps/agenda/tests/test_views_listar_urs.py::test_lista_filtrada_por_ufr).
+export interface PagamentosUrFiltro {
+  entidadeRegistradora: string;
+  credenciadora: string;
+  ufr: string;
+  titular: string;
+  arranjo: string;
+  dataLiquidacao: string;
+}
+
+export interface PagamentosUrResposta {
+  pagamentos: PagamentoUrDTO[];
+}
+
+export function getPagamentosUr(filtro: PagamentosUrFiltro): Promise<PagamentosUrResposta> {
+  return request<PagamentosUrResposta>('GET', `/agendas/urs/pagamentos${buildQuery(filtro)}`);
+}
